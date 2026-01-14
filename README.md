@@ -1,0 +1,1 @@
+This Github repository contains the implementation of barcode system for Identity and Access Management for NEST School
