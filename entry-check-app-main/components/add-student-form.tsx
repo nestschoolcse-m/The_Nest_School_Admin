@@ -9,11 +9,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { grades, sections, genders, transportModes } from "@/lib/data"
+import { addStudentToFirestore } from "@/lib/firestore-service"
+import { toast } from "sonner"
 
 type FormMode = "add" | "modify" | "delete"
 
 export function AddStudentForm() {
   const [mode, setMode] = useState<FormMode>("add")
+  const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     studentName: "",
     admissionNumber: "",
@@ -23,13 +26,53 @@ export function AddStudentForm() {
     usnNumber: "",
     modeOfTransport: "parent",
     parentCardNumber: "",
+    fatherName: "",
+    fatherMobile: "",
+    motherName: "",
+    motherMobile: "",
+    dob: "",
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Handle form submission - connect to backend later
-    console.log("Form submitted:", formData)
-    alert(`Student ${mode === "add" ? "added" : mode === "modify" ? "modified" : "deleted"} successfully!`)
+    setLoading(true)
+
+    try {
+      if (mode === "add") {
+        const result = await addStudentToFirestore(formData)
+
+        if (result.success) {
+          toast.success(result.message)
+          // Reset form
+          setFormData({
+            studentName: "",
+            admissionNumber: "",
+            grade: "PRE-KG",
+            section: "A",
+            gender: "Male",
+            usnNumber: "",
+            modeOfTransport: "parent",
+            parentCardNumber: "",
+            fatherName: "",
+            fatherMobile: "",
+            motherName: "",
+            motherMobile: "",
+            dob: "",
+          })
+        } else {
+          toast.error(result.message)
+        }
+      } else if (mode === "modify") {
+        toast.error("Modify functionality coming soon")
+      } else if (mode === "delete") {
+        toast.error("Delete functionality coming soon")
+      }
+    } catch (error) {
+      console.error("Form submission error:", error)
+      toast.error("An error occurred. Please try again.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -143,6 +186,51 @@ export function AddStudentForm() {
                 className="border-teal-300"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dob">DATE OF BIRTH</Label>
+              <Input
+                id="dob"
+                type="date"
+                value={formData.dob}
+                onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                className="border-teal-300"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="fatherName">FATHER NAME</Label>
+              <Input
+                id="fatherName"
+                value={formData.fatherName}
+                onChange={(e) => setFormData({ ...formData, fatherName: e.target.value })}
+                placeholder="Enter father name"
+                className="border-teal-300"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="fatherMobile">FATHER MOBILE</Label>
+              <Input
+                id="fatherMobile"
+                type="tel"
+                value={formData.fatherMobile}
+                onChange={(e) => setFormData({ ...formData, fatherMobile: e.target.value })}
+                placeholder="Enter father mobile"
+                className="border-teal-300"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dob">DATE OF BIRTH</Label>
+              <Input
+                id="dob"
+                type="date"
+                value={formData.dob}
+                onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                className="border-teal-300"
+              />
+            </div>
           </div>
 
           {/* Right Column */}
@@ -211,17 +299,41 @@ export function AddStudentForm() {
                 className="border-teal-300"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="motherName">MOTHER NAME</Label>
+              <Input
+                id="motherName"
+                value={formData.motherName}
+                onChange={(e) => setFormData({ ...formData, motherName: e.target.value })}
+                placeholder="Enter mother name"
+                className="border-teal-300"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="motherMobile">MOTHER MOBILE</Label>
+              <Input
+                id="motherMobile"
+                type="tel"
+                value={formData.motherMobile}
+                onChange={(e) => setFormData({ ...formData, motherMobile: e.target.value })}
+                placeholder="Enter mother mobile"
+                className="border-teal-300"
+              />
+            </div>
           </div>
         </div>
 
         <div className="mt-8 flex justify-center">
           <Button
             type="submit"
+            disabled={loading}
             className={`px-8 py-3 ${
               mode === "delete" ? "bg-red-500 hover:bg-red-600" : "bg-teal-500 hover:bg-teal-600"
-            }`}
+            } disabled:opacity-50`}
           >
-            {mode === "add" ? "Add Student" : mode === "modify" ? "Update Student" : "Delete Student"}
+            {loading ? "Processing..." : mode === "add" ? "Add Student" : mode === "modify" ? "Update Student" : "Delete Student"}
           </Button>
         </div>
       </form>

@@ -1,25 +1,28 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Search } from "lucide-react"
-import { students, type Student } from "@/lib/data"
-import { Input } from "@/components/ui/input"
+import { useState } from "react";
+import { Search } from "lucide-react";
+import { useStudents } from "@/hooks/use-students";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 
 interface StudentTableProps {
-  showTodayTransport?: boolean
-  compact?: boolean
+  showTodayTransport?: boolean;
+  compact?: boolean;
 }
 
-export function StudentTable({ showTodayTransport = false, compact = false }: StudentTableProps) {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [data] = useState<Student[]>(students)
+export function StudentTable({
+  showTodayTransport = false,
+  compact = false,
+}: StudentTableProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const { students, loading, error } = useStudents();
 
-  const filteredStudents = data.filter(
+  const filteredStudents = students.filter(
     (student) =>
       student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.usnNumber.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      student.usnNumber.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -40,83 +43,108 @@ export function StudentTable({ showTodayTransport = false, compact = false }: St
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S.NO</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAME</th>
-              {!compact && (
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <Spinner />
+            <span className="ml-2 text-gray-600">Loading students...</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="p-4 text-red-600 bg-red-50">
+            Error loading students: {error}
+          </div>
+        )}
+
+        {!loading && !error && (
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {showTodayTransport ? "USN NUMBER" : "ADMISSION NUMBER"}
+                  NAME
                 </th>
-              )}
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GRADE</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SEC</th>
-              {!compact && !showTodayTransport && (
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  GENDER
-                </th>
-              )}
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                MODE OF TRANSPORT {showTodayTransport ? "(DEFAULT)" : ""}
-              </th>
-              {showTodayTransport && (
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  MODE OF TRANSPORT (TODAY)
-                </th>
-              )}
-              {!compact && !showTodayTransport && (
-                <>
+                {!compact && (
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     USN NUMBER
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    PARENT CARD
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    DATE OF BIRTH
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    BLOOD
-                  </th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filteredStudents.map((student) => (
-              <tr key={student.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3 text-sm text-gray-900">{student.sno}</td>
-                <td className="px-4 py-3 text-sm text-gray-900">{student.name}</td>
-                {!compact && (
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {showTodayTransport ? student.usnNumber : student.admissionNumber}
-                  </td>
                 )}
-                <td className="px-4 py-3 text-sm text-gray-600">{student.grade}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">{student.section}</td>
-                {!compact && !showTodayTransport && (
-                  <td className="px-4 py-3 text-sm text-gray-600">{student.gender}</td>
-                )}
-                <td className="px-4 py-3 text-sm text-gray-600">{student.modeOfTransport}</td>
-                {showTodayTransport && (
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {student.todayTransport || student.modeOfTransport}
-                  </td>
-                )}
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  GRADE
+                </th>
                 {!compact && !showTodayTransport && (
                   <>
-                    <td className="px-4 py-3 text-sm text-gray-600">{student.usnNumber}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{student.parentCard}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{student.dateOfBirth}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{student.bloodGroup}</td>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      DATE OF BIRTH
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      FATHER NAME
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      FATHER MOBILE
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      MOTHER NAME
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      MOTHER MOBILE
+                    </th>
                   </>
                 )}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredStudents.length > 0 ? (
+                filteredStudents.map((student) => (
+                  <tr
+                    key={student.id}
+                    className="hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {student.name}
+                    </td>
+                    {!compact && (
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {student.usnNumber}
+                      </td>
+                    )}
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {student.grade}
+                    </td>
+                    {!compact && !showTodayTransport && (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {student.dob}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {student.fatherName}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {student.fatherMobile}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {student.motherName}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {student.motherMobile}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={compact ? 2 : 8}
+                    className="px-4 py-8 text-center text-gray-500"
+                  >
+                    No students found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
-  )
+  );
 }

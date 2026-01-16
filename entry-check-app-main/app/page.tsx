@@ -1,9 +1,8 @@
-import { Home, Users, LogOut, Clock, Bus, DoorOpen } from "lucide-react"
-import { StatCard } from "@/components/stat-card"
-import { GradeAttendance } from "@/components/grade-attendance"
-import { CalendarWidget } from "@/components/calendar-widget"
-import { StudentTable } from "@/components/student-table"
-import { dashboardStats } from "@/lib/data"
+import { Home, Users, LogOut, Clock, Bus, DoorOpen } from "lucide-react";
+import { DashboardMetrics } from "@/components/dashboard-metrics";
+import { GradeAttendance } from "@/components/grade-attendance";
+import { CalendarWidget } from "@/components/calendar-widget";
+import { StudentTable } from "@/components/student-table";
 
 export default function DashboardPage() {
   return (
@@ -13,51 +12,8 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-teal-600 italic">Admin-Xpert</h1>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard
-          icon={Home}
-          label="Number of Students"
-          value={dashboardStats.totalStudents}
-          iconClassName="text-gray-700"
-          valueClassName="text-teal-600"
-        />
-        <StatCard
-          icon={Users}
-          label="Students Entry"
-          value={dashboardStats.studentsEntry}
-          iconClassName="text-gray-700"
-          valueClassName="text-teal-600"
-        />
-        <StatCard
-          icon={LogOut}
-          label="Student Exit"
-          value={dashboardStats.studentExit}
-          iconClassName="text-teal-500"
-          valueClassName="text-teal-600"
-        />
-        <StatCard
-          icon={Clock}
-          label="Earlier Pickups"
-          value={dashboardStats.earlierPickups}
-          iconClassName="text-teal-500"
-          valueClassName="text-teal-600"
-        />
-        <StatCard
-          icon={Bus}
-          label="After School"
-          value={dashboardStats.afterSchool}
-          iconClassName="text-gray-700"
-          valueClassName="text-teal-600"
-        />
-        <StatCard
-          icon={DoorOpen}
-          label="Campus Exit"
-          value={dashboardStats.campusExit}
-          iconClassName="text-gray-700"
-          valueClassName="text-teal-600"
-        />
-      </div>
+      {/* Stats Grid - Now fetches from Firebase */}
+      <DashboardMetrics />
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -73,5 +29,5 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
