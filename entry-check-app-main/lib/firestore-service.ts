@@ -6,7 +6,9 @@ import {
   setDoc,
   doc,
   serverTimestamp,
+  getDoc,
   getDocs,
+  deleteDoc,
   Timestamp,
   writeBatch,
 } from "firebase/firestore";
@@ -22,23 +24,27 @@ export interface AddStudentFormData {
   usnNumber: string;
   modeOfTransport: string;
   parentCardNumber: string;
-  fatherName?: string;
-  fatherMobile?: string;
-  motherName?: string;
-  motherMobile?: string;
-  dob?: string;
+  fatherName: string;
+  fatherMobile: string;
+  motherName: string;
+  motherMobile: string;
+  dob: string;
 }
 
 // Interface for Firestore document (only fields that exist in DB)
 export interface FirestoreStudent {
   name: string;
   grade: string;
+  section: string;
+  admissionNumber: string;
   dob: string;
   fatherName: string;
   fatherMobile: number;
   motherName: string;
   motherMobile: number;
   parentusn: string;
+  gender: string;
+  modeOfTransport: string;
   createdAt: Timestamp;
 }
 
@@ -50,15 +56,19 @@ export const addStudentToFirestore = async (
   formData: AddStudentFormData,
 ): Promise<{ success: boolean; message: string; id?: string }> => {
   try {
-    // Map form fields to Firestore fields
-    // Only include fields that exist in the database schema
-    const usnWithSuffix = formData.usnNumber ? `${formData.usnNumber}_L01` : "";
-    const parentUSN = formData.usnNumber ? `${formData.usnNumber}_P01` : "";
+    const studentBase = formData.usnNumber;
+    const usnWithSuffix = studentBase ? `${studentBase}_L01` : "";
+
+    // Use parentCardNumber if provided, otherwise fallback to student USN
+    const parentBase = formData.parentCardNumber || studentBase;
+    const parentUSN = parentBase ? `${parentBase}_P01` : "";
 
     const firestoreData: FirestoreStudent = {
       name: formData.studentName,
       grade: formData.grade,
-      dob: formData.dob || "N/A", // Use provided dob or default
+      section: formData.section || "nil",
+      admissionNumber: formData.admissionNumber || "N/A",
+      dob: formData.dob || "N/A",
       fatherName: formData.fatherName || "N/A",
       fatherMobile: formData.fatherMobile
         ? parseInt(String(formData.fatherMobile))
@@ -68,14 +78,14 @@ export const addStudentToFirestore = async (
         ? parseInt(String(formData.motherMobile))
         : 0,
       parentusn: parentUSN,
+      gender: formData.gender || "Male",
+      modeOfTransport: formData.modeOfTransport || "parent",
       createdAt: serverTimestamp() as Timestamp,
     };
 
-    // Use USN as document ID if provided, otherwise auto-generate
     const studentsCollection = collection(db, "students");
 
     if (formData.usnNumber && formData.usnNumber.trim()) {
-      // Add with custom document ID (USN) with _L01 suffix
       await setDoc(doc(db, "students", usnWithSuffix), firestoreData);
       return {
         success: true,
@@ -83,7 +93,6 @@ export const addStudentToFirestore = async (
         id: usnWithSuffix,
       };
     } else {
-      // Auto-generate document ID
       const docRef = await addDoc(studentsCollection, firestoreData);
       return {
         success: true,
@@ -95,112 +104,8 @@ export const addStudentToFirestore = async (
     console.error("Error adding student:", error);
     return {
       success: false,
-      message: `Error adding student: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`,
+      message: `Error adding student: ${error instanceof Error ? error.message : "Unknown error"}`,
     };
-  }
-};
-
-/**
- * Fetch dashboard metrics from Firestore
- * Gets today's attendance logs from attendance_logs collection
- */
-export const getDashboardMetrics = async () => {
-  try {
-    const studentsCollection = collection(db, "students");
-    const studentsSnapshot = await getDocs(studentsCollection);
-    const totalStudents = studentsSnapshot.size;
-
-    // Fetch attendance logs from the attendance_logs collection
-    const attendanceLogsCollection = collection(db, "attendance_logs");
-    const logsSnapshot = await getDocs(attendanceLogsCollection);
-
-    // Get today's date at start of day (00:00:00)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const todayStart = today.getTime();
-    const todayEnd = todayStart + 24 * 60 * 60 * 1000; // End of day
-
-    // Track unique students with entry and exit today
-    const studentsWithEntry = new Set<string>();
-    const studentsWithExit = new Set<string>();
-
-    logsSnapshot.forEach((doc) => {
-      const data = doc.data();
-      const timestamp = data.timestamp;
-
-      let logTime = 0;
-
-      // Handle different timestamp formats
-      if (typeof timestamp === "string") {
-        logTime = new Date(timestamp).getTime();
-      } else if (timestamp instanceof Timestamp) {
-        logTime = timestamp.toMillis();
-      } else if (typeof timestamp === "number") {
-        logTime = timestamp;
-      }
-
-      // Check if log is from today
-      if (logTime >= todayStart && logTime < todayEnd) {
-        const usn = data.usn;
-        const type = data.type?.toUpperCase();
-
-        if (usn) {
-          if (type === "ENTRY") {
-            studentsWithEntry.add(usn);
-          } else if (type === "EXIT") {
-            studentsWithExit.add(usn);
-          }
-        }
-      }
-    });
-
-    const studentsEntry = studentsWithEntry.size;
-    const studentExit = studentsWithExit.size;
-
-    return {
-      totalStudents,
-      studentsEntry,
-      studentExit,
-      earlierPickups: Math.floor(totalStudents * 0.15), // Placeholder for now
-      afterSchool: Math.floor(totalStudents * 0.25), // Placeholder for now
-      onVehicle: Math.floor(totalStudents * 0.35), // Placeholder for now
-    };
-  } catch (error) {
-    console.error("Error fetching dashboard metrics:", error);
-    return {
-      totalStudents: 0,
-      studentsEntry: 0,
-      studentExit: 0,
-      earlierPickups: 0,
-      afterSchool: 0,
-      onVehicle: 0,
-    };
-  }
-};
-
-/**
- * Fetch students by grade for grade attendance chart
- */
-export const getStudentsByGradeForChart = async () => {
-  try {
-    const studentsCollection = collection(db, "students");
-    const snapshot = await getDocs(studentsCollection);
-
-    const gradeMap: { [key: string]: number } = {};
-
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      const grade = data.grade || "Unknown";
-      gradeMap[grade] = (gradeMap[grade] || 0) + 1;
-    });
-
-    return gradeMap;
-  } catch (error) {
-    console.error("Error fetching grade data:", error);
-    return {};
   }
 };
 
@@ -210,12 +115,16 @@ export const getStudentsByGradeForChart = async () => {
 export interface BulkUploadStudent {
   name: string | null;
   grade: string | null;
+  section: string | null;
+  admissionNumber: string | null;
   usn: string | null;
   dob: string | null;
   fatherName: string | null;
   motherName: string | null;
   fatherMobile: string | null;
   motherMobile: string | null;
+  modeOfTransport: string | null;
+  gender: string | null;
 }
 
 export const bulkUploadStudents = async (
@@ -242,7 +151,6 @@ export const bulkUploadStudents = async (
       };
     }
 
-    // Firebase has a limit of 500 operations per batch
     const batchSize = 500;
     const batches = [];
 
@@ -252,21 +160,20 @@ export const bulkUploadStudents = async (
 
       batchStudents.forEach((student) => {
         try {
-          // Validate required fields
           if (!student.usn) {
             errors.push(`Student "${student.name || "Unknown"}": Missing USN`);
             failedCount++;
             return;
           }
 
-          // Create Firestore document
-          // Add _L01 suffix to USN and create _P01 parent USN
           const usnWithSuffix = `${student.usn}_L01`;
           const parentUSN = `${student.usn}_P01`;
 
           const firestoreData: FirestoreStudent = {
             name: student.name || "N/A",
             grade: student.grade || "N/A",
+            section: student.section || "nil",
+            admissionNumber: student.admissionNumber || "N/A",
             dob: student.dob || "N/A",
             fatherName: student.fatherName || "N/A",
             fatherMobile: student.fatherMobile
@@ -277,6 +184,8 @@ export const bulkUploadStudents = async (
               ? parseInt(String(student.motherMobile))
               : 0,
             parentusn: parentUSN,
+            gender: student.gender || "Male",
+            modeOfTransport: student.modeOfTransport || "parent",
             createdAt: serverTimestamp() as Timestamp,
           };
 
@@ -294,7 +203,6 @@ export const bulkUploadStudents = async (
       batches.push(batch.commit());
     }
 
-    // Execute all batches
     await Promise.all(batches);
 
     const message =
@@ -321,3 +229,171 @@ export const bulkUploadStudents = async (
     };
   }
 };
+
+/**
+ * Fetch a student by USN
+ */
+export const getStudentByUSN = async (
+  usn: string,
+): Promise<{ success: boolean; data?: AddStudentFormData; message: string }> => {
+  try {
+    const usnWithSuffix = usn.includes("_L01") ? usn : `${usn}_L01`;
+    const docRef = doc(db, "students", usnWithSuffix);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      const formData: AddStudentFormData = {
+        studentName: data.name || "",
+        admissionNumber: data.admissionNumber || "",
+        grade: data.grade || "PRE-KG",
+        section: data.section || "nil",
+        gender: data.gender || "Male",
+        usnNumber: usn.replace("_L01", ""),
+        modeOfTransport: data.modeOfTransport || "parent",
+        parentCardNumber: data.parentusn ? data.parentusn.replace("_P01", "") : "",
+        fatherName: data.fatherName === "N/A" ? "" : data.fatherName,
+        fatherMobile: data.fatherMobile ? String(data.fatherMobile) : "",
+        motherName: data.motherName === "N/A" ? "" : data.motherName,
+        motherMobile: data.motherMobile ? String(data.motherMobile) : "",
+        dob: data.dob === "N/A" ? "" : data.dob,
+      };
+
+      return {
+        success: true,
+        data: formData,
+        message: "Student found",
+      };
+    } else {
+      return {
+        success: false,
+        message: "Student not found with this USN",
+      };
+    }
+  } catch (error) {
+    console.error("Error fetching student:", error);
+    return {
+      success: false,
+      message: `Error fetching student: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+};
+
+/**
+ * Update an existing student in Firestore
+ */
+export const updateStudentInFirestore = async (
+  originalUsn: string,
+  formData: AddStudentFormData,
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const newUsn = formData.usnNumber;
+    const isUsnChanged = originalUsn !== newUsn;
+
+    const oldDocId = originalUsn.includes("_L01") ? originalUsn : `${originalUsn}_L01`;
+    const newDocId = newUsn.includes("_L01") ? newUsn : `${newUsn}_L01`;
+
+    // Use parentCardNumber if provided, otherwise fallback to student USN
+    const parentBase = formData.parentCardNumber || newUsn;
+    const parentUSN = parentBase ? (parentBase.includes("_P01") ? parentBase : `${parentBase}_P01`) : "";
+
+    const firestoreData: FirestoreStudent = {
+      name: formData.studentName,
+      grade: formData.grade,
+      section: formData.section || "nil",
+      admissionNumber: formData.admissionNumber || "N/A",
+      dob: formData.dob || "N/A",
+      fatherName: formData.fatherName || "N/A",
+      fatherMobile: formData.fatherMobile
+        ? parseInt(String(formData.fatherMobile))
+        : 0,
+      motherName: formData.motherName || "N/A",
+      motherMobile: formData.motherMobile
+        ? parseInt(String(formData.motherMobile))
+        : 0,
+      parentusn: parentUSN,
+      gender: formData.gender || "Male",
+      modeOfTransport: formData.modeOfTransport || "parent",
+      createdAt: serverTimestamp() as Timestamp,
+    };
+
+    if (isUsnChanged) {
+      // Create new document
+      await setDoc(doc(db, "students", newDocId), firestoreData);
+      // Delete old document
+      await deleteDoc(doc(db, "students", oldDocId));
+
+      return {
+        success: true,
+        message: `Student USN changed from ${originalUsn} to ${newUsn} and data updated!`,
+      };
+    } else {
+      // Update existing document
+      await setDoc(doc(db, "students", oldDocId), firestoreData, {
+        merge: true,
+      });
+
+      return {
+        success: true,
+        message: `Student ${formData.studentName} updated successfully!`,
+      };
+    }
+  } catch (error) {
+    console.error("Error updating student:", error);
+    return {
+      success: false,
+      message: `Error updating student: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+};
+
+/**
+ * Delete a student from Firestore
+ */
+export const deleteStudentFromFirestore = async (
+  usn: string,
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const usnWithSuffix = usn.includes("_L01") ? usn : `${usn}_L01`;
+    await deleteDoc(doc(db, "students", usnWithSuffix));
+
+    return {
+      success: true,
+      message: `Student with USN ${usn} deleted successfully!`,
+    };
+  } catch (error) {
+    console.error("Error deleting student:", error);
+    return {
+      success: false,
+      message: `Error deleting student: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+};
+
+/**
+ * Fetch dashboard metrics from Firestore
+ */
+export const getDashboardMetrics = async () => {
+  try {
+    const studentsSnap = await getDocs(collection(db, "students"));
+    const totalStudents = studentsSnap.size;
+
+    // You can add more complex logic here if needed (e.g., filtering by attendance)
+    // For now, returning total students and some placeholder numbers
+    return {
+      totalStudents,
+      activeToday: 0, // Placeholder
+      avgAttendance: 0, // Placeholder
+      newStudents: 0, // Placeholder
+    };
+  } catch (error) {
+    console.error("Error fetching dashboard metrics:", error);
+    return {
+      totalStudents: 0,
+      activeToday: 0,
+      avgAttendance: 0,
+      newStudents: 0,
+    };
+  }
+};
+

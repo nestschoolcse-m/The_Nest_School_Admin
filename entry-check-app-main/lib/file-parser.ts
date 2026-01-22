@@ -6,12 +6,15 @@
 export interface ParsedStudent {
   name: string | null;
   grade: string | null;
+  section: string | null;
+  admissionNumber: string | null;
   usn: string | null;
   dob: string | null;
   fatherName: string | null;
   motherName: string | null;
   fatherMobile: string | null;
   motherMobile: string | null;
+  gender: string | null;
 }
 
 export interface ParsedFileData {
@@ -57,12 +60,15 @@ export async function parseCSV(file: File): Promise<ParsedFileData> {
           const student: ParsedStudent = {
             name,
             grade,
+            section: parts[9] || "nil",
+            admissionNumber: parts[0] || null, // Assuming 1st column is Admission No in CSV
             usn,
             dob: parts[4] || null,
             fatherName: parts[5] || null,
             motherName: parts[6] || null,
             fatherMobile: parts[7] || null,
             motherMobile: parts[8] || null,
+            gender: parts[10] || "Male",
           };
 
           students.push(student);
@@ -344,6 +350,7 @@ function mapXLSXColumns(headers: string[]): {
   const fieldAliases: { [field: string]: string[] } = {
     name: ["name", "student", "student name", "name of student", "full name"],
     grade: ["grade", "class", "standard", "gr", "g"],
+    section: ["section", "sec", "div", "division"],
     usn: ["usn", "usn number", "enrollment", "id", "student id"],
     dob: ["dob", "date of birth", "birth", "birthday", "born"],
     fatherName: ["father", "father name", "father's name"],
@@ -360,6 +367,8 @@ function mapXLSXColumns(headers: string[]): {
       "mother no",
       "mother contact",
     ],
+    admissionNumber: ["admission number", "adm no", "admission no", "reg no", "admission"],
+    gender: ["gender", "sex", "m/f"],
   };
 
   for (const [field, aliases] of Object.entries(fieldAliases)) {
@@ -452,22 +461,28 @@ function extractStudentFromXLSXRow(
 
   const name = getValue("name");
   const gradeRaw = getValue("grade");
+  const section = getValue("section");
+  const admissionNumber = getValue("admissionNumber");
   const usn = getValue("usn");
   const dob = formatDOB(row[columnMap["dob"]]); // Use formatDOB for date conversion
   const fatherName = getValue("fatherName");
   const motherName = getValue("motherName");
   const fatherMobile = getValue("fatherMobile");
   const motherMobile = getValue("motherMobile");
+  const gender = getValue("gender");
 
   return {
     name,
     grade: gradeRaw ? normalizeGrade(gradeRaw) : null,
+    section: section || "nil",
+    admissionNumber,
     usn,
     dob,
     fatherName,
     motherName,
     fatherMobile,
     motherMobile,
+    gender: gender || "Male",
   };
 }
 

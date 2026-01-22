@@ -265,7 +265,7 @@ export const gradeAttendance: GradeAttendance[] = [
   { grade: "IV", strength: 50, present: 45 },
 ]
 
-export const grades = ["PRE-KG", "LKG", "UKG", "I", "II", "III", "IV", "V"]
-export const sections = ["A", "B", "C"]
+export const grades = ["PRE-KG", "LKG", "UKG", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
+export const sections = ["nil", "A", "B", "C"]
 export const genders = ["Male", "Female"]
 export const transportModes = ["parent", "bus", "van", "auto"]
