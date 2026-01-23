@@ -29,10 +29,11 @@ ios/
 # Environment variables
 ####################################
 .env
-.env.local
-.env.development
+.env.local.example
+.env.example
 .env.production
 .env.test
+.env.sentry-build-plugin
 
 ####################################
 # Logs

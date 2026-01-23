@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
+import ClientLayout from "./ClientLayout"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
@@ -40,13 +41,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans antialiased`}>
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <div className="flex-1 ml-64">
-            <Header />
-            <main className="bg-gray-50 min-h-[calc(100vh-4rem)]">{children}</main>
-          </div>
-        </div>
+        <ClientLayout>{children}</ClientLayout>
         <Analytics />
       </body>
     </html>

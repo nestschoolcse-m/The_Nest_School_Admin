@@ -13,6 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase-client";
+import { dashboardStats } from "./data";
 
 // Interface for form data (includes fields not in database)
 export interface AddStudentFormData {
@@ -378,18 +379,132 @@ export const getDashboardMetrics = async () => {
     const studentsSnap = await getDocs(collection(db, "students"));
     const totalStudents = studentsSnap.size;
 
-    // You can add more complex logic here if needed (e.g., filtering by attendance)
-    // For now, returning total students and some placeholder numbers
+    // Try to locate an attendance-like collection and aggregate entry/exit counts.
+    const candidateCollections = ["attendance_logs"];
+
+    let studentsEntry = 0;
+    let studentExit = 0;
+    let foundAttendance = false;
+
+    for (const colName of candidateCollections) {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        if (!snap.empty) {
+          foundAttendance = true;
+          // Only count attendance records from today (00:00 IST -> now)
+          const now = new Date();
+          const IST_OFFSET_MIN = 5 * 60 + 30; // +5:30
+          const nowIST = new Date(now.getTime() + IST_OFFSET_MIN * 60000);
+          const startOfDayIST = new Date(nowIST);
+          startOfDayIST.setHours(0, 0, 0, 0);
+          const startOfDay = new Date(startOfDayIST.getTime() - IST_OFFSET_MIN * 60000);
+
+          snap.forEach((docSnap) => {
+            const data: any = docSnap.data() || {};
+
+            // Try to derive a timestamp from common fields
+            const tsCandidates = [data.timestamp, data.createdAt, data.time, data.ts, data.recordedAt];
+            let docDate: Date | null = null;
+
+            for (const candidate of tsCandidates) {
+              if (!candidate) continue;
+              // Firestore Timestamp or objects with toDate()
+              if (typeof candidate?.toDate === "function") {
+                try {
+                  docDate = candidate.toDate();
+                } catch (e) {
+                  // ignore and continue
+                }
+              } else if (candidate instanceof Timestamp) {
+                docDate = candidate.toDate();
+              } else if (typeof candidate === "number") {
+                docDate = new Date(candidate);
+              } else if (typeof candidate === "string") {
+                const parsed = new Date(candidate);
+                if (!isNaN(parsed.getTime())) docDate = parsed;
+              }
+              if (docDate) break;
+            }
+
+            // Fallback: try document createTime metadata if available
+            if (!docDate) {
+              const metaCreate: any = (docSnap as any).createTime;
+              if (metaCreate && typeof metaCreate.toDate === "function") {
+                try {
+                  docDate = metaCreate.toDate();
+                } catch (e) {
+                  // ignore
+                }
+              }
+            }
+
+            // If we couldn't find a timestamp, skip this doc for today's counts
+            if (!docDate) return;
+
+            // Only consider events from today (IST)
+            if (docDate < startOfDay || docDate > now) return;
+
+            // Possible field names that indicate direction/type (kept unchanged)
+            const candidates = [data.type, data.timestamp, data.createdAt,data.usn,data.wardName];
+            const combined = candidates.filter(Boolean).join(" ").toLowerCase();
+
+            if (combined.includes("entry") || combined.includes("in") || combined.includes("checkin") || combined.includes("check-in") || combined.includes("arrival")) {
+              studentsEntry += 1;
+            } else if (combined.includes("exit") || combined.includes("out") || combined.includes("checkout") || combined.includes("check-out") || combined.includes("departure")) {
+              studentExit += 1;
+            } else {
+              // If no explicit direction, try heuristics: numeric status flags
+              if (data?.direction === 1 || data?.status === "in" || data?.status === "inside") {
+                studentsEntry += 1;
+              } else if (data?.direction === -1 || data?.status === "out" || data?.status === "left") {
+                studentExit += 1;
+              }
+            }
+          });
+
+          // stop after first collection that appears to contain attendance-like docs
+          break;
+        }
+      } catch (err) {
+        // ignore and try next candidate collection
+      }
+    }
+
+    // If we couldn't find attendance documents, fall back to sample data from lib/data
+    if (!foundAttendance) {
+      return {
+        totalStudents,
+        studentsEntry: dashboardStats.studentsEntry || 0,
+        studentExit: dashboardStats.studentExit || 0,
+        earlierPickups: dashboardStats.earlierPickups || 0,
+        afterSchool: dashboardStats.afterSchool || 0,
+        onVehicle: dashboardStats.campusExit || 0,
+        activeToday: 0,
+        avgAttendance: 0,
+        newStudents: 0,
+      };
+    }
+
     return {
       totalStudents,
-      activeToday: 0, // Placeholder
-      avgAttendance: 0, // Placeholder
-      newStudents: 0, // Placeholder
+      studentsEntry,
+      studentExit,
+      earlierPickups: 0,
+      afterSchool: 0,
+      onVehicle: 0,
+      activeToday: 0,
+      avgAttendance: 0,
+      newStudents: 0,
     };
   } catch (error) {
     console.error("Error fetching dashboard metrics:", error);
     return {
       totalStudents: 0,
+      studentsEntry: 0,
+      studentExit: 0,
+      earlierPickups: 0,
+      afterSchool: 0,
+      onVehicle: 0,
       activeToday: 0,
       avgAttendance: 0,
       newStudents: 0,

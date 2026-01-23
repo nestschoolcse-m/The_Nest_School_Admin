@@ -42,8 +42,8 @@ export function DashboardMetrics() {
   useEffect(() => {
     fetchMetrics();
 
-    // Set up auto-refresh every 30 seconds to show live attendance updates
-    const interval = setInterval(fetchMetrics, 30000);
+    // Set up auto-refresh every 60 seconds to show live attendance updates
+    const interval = setInterval(fetchMetrics, 60000);
 
     return () => clearInterval(interval);
   }, []);

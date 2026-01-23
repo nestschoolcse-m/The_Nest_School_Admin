@@ -12,7 +12,6 @@ const menuItems = [
   { icon: Users, label: "Students", href: "/students" },
   { icon: UserPlus, label: "Add Student", href: "/add-student" },
   { icon: FileText, label: "Reports", href: "/reports" },
-  { icon: MessageSquare, label: "Messages", href: "/messages" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
 
