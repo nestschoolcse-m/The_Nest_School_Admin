@@ -123,7 +123,7 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
 
       console.log(`Sheet has ${rawData.length} rows total`);
 
-      // Find header row
+      // Find header row (should be row 4, which is index 3)
       const headerResult = findXLSXHeaders(rawData);
       if (headerResult.headerIndex === -1) {
         console.warn(`Could not find header row in sheet ${sheetName}`);
@@ -139,12 +139,28 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
       const columnMap = mapXLSXColumns(headerResult.headers);
       console.log("Column mapping:", JSON.stringify(columnMap, null, 2));
 
-      // Process rows starting after headers
-      const startRow = headerResult.headerIndex + 1;
+      // CRITICAL FIX: Determine data start row based on header position
+      // There are TWO structures in the Excel file:
+      // Structure 1 (LKG sheets): Headers at row 2 (index 1), instructions at row 3, data starts at row 4 or 5
+      // Structure 2 (most sheets): Headers at row 4 (index 3), instructions at row 5, data starts at row 6 (index 5)
+      let startRow: number;
+      if (headerResult.headerIndex === 1) {
+        // Headers at row 2 - this is LKG structure
+        // Check if row 4 (index 3) is empty, if so start from row 5
+        const row4 = rawData[3];
+        const isEmpty = !row4 || row4.every((cell: any) => !cell || String(cell).trim() === "");
+        startRow = isEmpty ? 4 : 3; // row 5 or row 4 (0-indexed)
+        console.log(`LKG sheet detected - starting from row ${startRow + 1} (row 4 is ${isEmpty ? 'empty' : 'not empty'})`);
+      } else {
+        // Headers at row 4 or later - use standard structure
+        startRow = 5; // row 6 (0-indexed)
+        console.log(`Standard sheet structure - starting from row ${startRow + 1}`);
+      }
+      
       let rowsProcessed = 0;
       let rowsSkipped = 0;
 
-      console.log(`Starting to process data rows from row ${startRow}...`);
+      console.log(`Starting to process data rows from row ${startRow + 1}...`);
 
       for (let i = startRow; i < rawData.length; i++) {
         const row = rawData[i];
@@ -154,7 +170,7 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
           continue;
         }
 
-        // Skip instruction rows (rows with common instruction keywords)
+        // Skip empty rows or rows that look like instructions
         const rowContent = row
           .map((v: any) =>
             String(v || "")
@@ -174,9 +190,6 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
           rowContent.includes("format");
 
         if (isInstructionRow) {
-          if (rowsProcessed < 3) {
-            console.log(`Row ${i + 1}: Skipped (instruction row)`);
-          }
           rowsSkipped++;
           continue;
         }
@@ -185,19 +198,23 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
 
         // Accept if we have USN or valid name (at least 2 chars)
         if (student.usn || (student.name && student.name.length >= 2)) {
+          // IMPORTANT: Use sheet name to determine grade (preserves sections like "GR 1 A", "LKG B")
+          // The grade column in data often doesn't have section letters
+          const gradeFromSheet = normalizeGrade(sheetName);
+          
           // Only add if grade is valid (not null after normalization)
-          const grade = student.grade || "UNGRADED";
-
-          // Skip students with unrecognized grades (normalized to null)
-          if (student.grade === null) {
+          if (!gradeFromSheet) {
             rowsSkipped++;
             continue;
           }
+          
+          // Override the student's grade with the sheet-based grade (which has the section)
+          student.grade = gradeFromSheet;
 
-          if (!gradeMap[grade]) {
-            gradeMap[grade] = [];
+          if (!gradeMap[gradeFromSheet]) {
+            gradeMap[gradeFromSheet] = [];
           }
-          gradeMap[grade].push(student);
+          gradeMap[gradeFromSheet].push(student);
 
           if (rowsProcessed < 5) {
             console.log(
@@ -488,27 +505,32 @@ function extractStudentFromXLSXRow(
 
 /**
  * Normalize grade format
- * Only accepts: PREKG, LKG, UKG, GR 1-10 (with optional sections A, B, C, etc)
- * Converts: "GR 1 A", "Grade 9", "UKG", etc -> "PREKG", "LKG", "UKG", "G1", "G1 A", "G9", etc
+ * Accepts: PREKG, LKG, UKG, GR 1-10 (with optional sections A, B, C, etc)
+ * Converts: "GR 1 A", "Grade 9", "UKG A", "PRE KG B" -> "PREKG A", "LKG B", "UKG C", "G1", "G1 A", "G9", etc
+ * PRESERVES SECTION LETTERS
  */
 export function normalizeGrade(grade: string | null): string | null {
   if (!grade) return null;
 
   grade = String(grade).trim().toUpperCase();
 
-  // Handle special pre-primary grades
+  // Extract section letter if present (A, B, C, etc.)
+  const sectionMatch = grade.match(/\b([A-Z])\s*$/);
+  const section = sectionMatch ? sectionMatch[1] : "";
+
+  // Handle special pre-primary grades WITH SECTIONS
   if (
     grade.includes("PREKG") ||
     grade.includes("PRE-KG") ||
     grade.includes("PRE KG")
   ) {
-    return "PREKG";
+    return section ? `PREKG ${section}` : "PREKG";
   }
   if (grade.includes("LKG") || grade.includes("L.K.G")) {
-    return "LKG";
+    return section ? `LKG ${section}` : "LKG";
   }
   if (grade.includes("UKG") || grade.includes("U.K.G")) {
-    return "UKG";
+    return section ? `UKG ${section}` : "UKG";
   }
 
   // Remove common prefixes for numbered grades
@@ -523,8 +545,8 @@ export function normalizeGrade(grade: string | null): string | null {
 
     // Only accept grades 1-10
     if (gradeNum >= 1 && gradeNum <= 10) {
-      const section = match[2] || "";
-      return `G${gradeNum}${section ? ` ${section}` : ""}`.trim();
+      const matchSection = match[2] || "";
+      return `G${gradeNum}${matchSection ? ` ${matchSection}` : ""}`.trim();
     }
 
     return null; // Invalid grade number
@@ -532,11 +554,12 @@ export function normalizeGrade(grade: string | null): string | null {
 
   // If it already looks like G1, G9 A, etc
   if (/^G(\d+)/.test(grade)) {
-    const numMatch = grade.match(/^G(\d+)/);
+    const numMatch = grade.match(/^G(\d+)(?:\s*([A-Z]))?/);
     if (numMatch) {
       const gradeNum = parseInt(numMatch[1], 10);
       if (gradeNum >= 1 && gradeNum <= 10) {
-        return grade;
+        const matchSection = numMatch[2] || "";
+        return `G${gradeNum}${matchSection ? ` ${matchSection}` : ""}`.trim();
       }
     }
     return null;

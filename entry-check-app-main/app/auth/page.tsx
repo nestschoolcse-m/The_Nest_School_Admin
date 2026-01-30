@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-
+import Image from "next/image"
 function getUsers() {
   try {
     return JSON.parse(localStorage.getItem("nest_users") || "{}")
@@ -52,11 +52,12 @@ export default function AuthLoginPage() {
 
   return (
     <div className="p-6 max-w-md mx-auto">
-      <div className="text-center mb-6">
-        {/* logo */}
-        <div className="inline-block">
-          <div className="w-14 h-14 rounded-md bg-purple-600 text-white flex items-center justify-center font-bold mx-auto">NS</div>
-          <div className="text-sm text-gray-600 mt-2">NestSchool — Entry Check</div>
+      <div className="text-center mb-8">
+        <div className="flex justify-center flex-col items-center">
+         <Image src="/logo.png" alt="The Nest School" width={120} height={120} className="mb-4" />
+          <div className="text-sm text-gray-600 font-semibold tracking-wide">
+            The Nest School Admin Dashboard
+          </div>
         </div>
       </div>
 

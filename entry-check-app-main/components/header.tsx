@@ -55,9 +55,7 @@ export function Header() {
       <div className="flex-1" />
       <div className="flex items-center gap-4">
         <span className="text-white font-medium">{currentDate}</span>
-        <button className="p-2 text-white hover:bg-white/20 rounded-full transition-colors">
-          <Bell className="w-5 h-5" />
-        </button>
+        
 
         <div className="relative" ref={ref}>
           <button

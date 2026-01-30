@@ -1,21 +1,21 @@
 // Dummy data for the school entry check app
 
 export interface Student {
-  id: string
-  sno: number
-  name: string
-  admissionNumber: string
-  grade: string
-  section: string
-  gender: string
-  modeOfTransport: string
-  usnNumber: string
-  parentCard: string
-  dateOfBirth: string
-  bloodGroup: string
-  photo?: string
-  parentPhoto?: string
-  todayTransport?: string
+  id: string;
+  sno: number;
+  name: string;
+  admissionNumber: string;
+  grade: string;
+  section: string;
+  gender: string;
+  modeOfTransport: string;
+  usnNumber: string;
+  parentCard: string;
+  dateOfBirth: string;
+  bloodGroup: string;
+  photo?: string;
+  parentPhoto?: string;
+  todayTransport?: string;
 }
 
 export const students: Student[] = [
@@ -229,15 +229,15 @@ export const students: Student[] = [
     dateOfBirth: "16-Jul-22",
     bloodGroup: "B +ve",
   },
-]
+];
 
 export interface DashboardStats {
-  totalStudents: number
-  studentsEntry: number
-  studentExit: number
-  earlierPickups: number
-  afterSchool: number
-  campusExit: number
+  totalStudents: number;
+  studentsEntry: number;
+  studentExit: number;
+  earlierPickups: number;
+  afterSchool: number;
+  campusExit: number;
 }
 
 export const dashboardStats: DashboardStats = {
@@ -247,12 +247,12 @@ export const dashboardStats: DashboardStats = {
   earlierPickups: 0,
   afterSchool: 0,
   campusExit: 0,
-}
+};
 
 export interface GradeAttendance {
-  grade: string
-  strength: number
-  present: number
+  grade: string;
+  strength: number;
+  present: number;
 }
 
 export const gradeAttendance: GradeAttendance[] = [
@@ -263,9 +263,23 @@ export const gradeAttendance: GradeAttendance[] = [
   { grade: "II", strength: 50, present: 45 },
   { grade: "III", strength: 53, present: 48 },
   { grade: "IV", strength: 50, present: 45 },
-]
+];
 
-export const grades = ["PRE-KG", "LKG", "UKG", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
-export const sections = ["nil", "A", "B", "C"]
-export const genders = ["Male", "Female"]
-export const transportModes = ["parent", "bus", "van", "auto"]
+export const grades = [
+  "PRE-KG",
+  "LKG",
+  "UKG",
+  "I",
+  "II",
+  "III",
+  "IV",
+  "V",
+  "VI",
+  "VII",
+  "VIII",
+  "IX",
+  "X",
+];
+export const sections = ["NILL", "A", "B", "C"];
+export const genders = ["Male", "Female"];
+export const transportModes = ["Parent", "Bus", "Van", "Auto"];

@@ -12,7 +12,7 @@ const menuItems = [
   { icon: Users, label: "Students", href: "/students" },
   { icon: UserPlus, label: "Add Student", href: "/add-student" },
   { icon: FileText, label: "Reports", href: "/reports" },
-  { icon: Settings, label: "Settings", href: "/settings" },
+  { icon: Users, label: "About", href: "/about" },
 ]
 
 export function Sidebar() {

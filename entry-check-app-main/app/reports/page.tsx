@@ -1,16 +1,8 @@
 import { FileText, ExternalLink } from "lucide-react"
 
 export default function ReportsPage() {
-  const rawUrl = process.env.NEXT_PUBLIC_SENTRY_PROJECT_URL || process.env.SENTRY_PROJECT_URL || "";
+  const SENTRY_URL ="https://nest-school.sentry.io/insights/projects/javascript-nextjs/?project=4510757877710928";
 
-  const cleaned = rawUrl ? rawUrl.replace(/^\"(.*)\"$/, "$1").trim() : "";
-
-  const SENTRY_URL = cleaned
-    ? /^https?:\/\//i.test(cleaned)
-      ? cleaned
-      : `https://${cleaned.replace(/^\/+/, "")}`
-    : "https://sentry.io/organizations/nest-school/projects/javascript-nextjs/";
-  
   return (
     <div className="p-6">
       <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">

@@ -11,6 +11,9 @@ import {
   deleteDoc,
   Timestamp,
   writeBatch,
+  query,
+  where,
+  DocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase-client";
 import { dashboardStats } from "./data";
@@ -30,6 +33,7 @@ export interface AddStudentFormData {
   motherName: string;
   motherMobile: string;
   dob: string;
+  id?: string; // Add this to track the exact document ID for updates/deletes
 }
 
 // Interface for Firestore document (only fields that exist in DB)
@@ -47,6 +51,8 @@ export interface FirestoreStudent {
   gender: string;
   modeOfTransport: string;
   createdAt: Timestamp;
+  usnNumber?: string; // Add this field
+  usn?: string;      // Add this field for compatibility
 }
 
 /**
@@ -57,36 +63,38 @@ export const addStudentToFirestore = async (
   formData: AddStudentFormData,
 ): Promise<{ success: boolean; message: string; id?: string }> => {
   try {
-    const studentBase = formData.usnNumber;
+    const studentBase = formData.usnNumber ? formData.usnNumber.replace(/(_L01|_P01)$/, "") : "";
     const usnWithSuffix = studentBase ? `${studentBase}_L01` : "";
 
     // Use parentCardNumber if provided, otherwise fallback to student USN
-    const parentBase = formData.parentCardNumber || studentBase;
+    const parentBase = (formData.parentCardNumber || studentBase || "").replace(/(_L01|_P01)$/, "");
     const parentUSN = parentBase ? `${parentBase}_P01` : "";
 
     const firestoreData: FirestoreStudent = {
-      name: formData.studentName,
+      name: toTitleCase(formData.studentName),
       grade: formData.grade,
       section: formData.section || "nil",
       admissionNumber: formData.admissionNumber || "N/A",
       dob: formData.dob || "N/A",
-      fatherName: formData.fatherName || "N/A",
+      fatherName: toTitleCase(formData.fatherName || "N/A"),
       fatherMobile: formData.fatherMobile
-        ? parseInt(String(formData.fatherMobile))
+        ? parseInt(String(formData.fatherMobile)) || 0
         : 0,
-      motherName: formData.motherName || "N/A",
+      motherName: toTitleCase(formData.motherName || "N/A"),
       motherMobile: formData.motherMobile
-        ? parseInt(String(formData.motherMobile))
+        ? parseInt(String(formData.motherMobile)) || 0
         : 0,
       parentusn: parentUSN,
       gender: formData.gender || "Male",
       modeOfTransport: formData.modeOfTransport || "parent",
       createdAt: serverTimestamp() as Timestamp,
+      usnNumber: usnWithSuffix,
+      usn: usnWithSuffix,
     };
 
     const studentsCollection = collection(db, "students");
 
-    if (formData.usnNumber && formData.usnNumber.trim()) {
+    if (usnWithSuffix) {
       await setDoc(doc(db, "students", usnWithSuffix), firestoreData);
       return {
         success: true,
@@ -167,27 +175,30 @@ export const bulkUploadStudents = async (
             return;
           }
 
-          const usnWithSuffix = `${student.usn}_L01`;
-          const parentUSN = `${student.usn}_P01`;
+          const baseUSN = student.usn ? student.usn.replace(/(_L01|_P01)$/, "") : "";
+          const usnWithSuffix = baseUSN ? `${baseUSN}_L01` : "";
+          const parentUSN = baseUSN ? `${baseUSN}_P01` : "";
 
           const firestoreData: FirestoreStudent = {
-            name: student.name || "N/A",
+            name: toTitleCase(student.name || "N/A"),
             grade: student.grade || "N/A",
             section: student.section || "nil",
             admissionNumber: student.admissionNumber || "N/A",
             dob: student.dob || "N/A",
-            fatherName: student.fatherName || "N/A",
+            fatherName: toTitleCase(student.fatherName || "N/A"),
             fatherMobile: student.fatherMobile
-              ? parseInt(String(student.fatherMobile))
+              ? parseInt(String(student.fatherMobile)) || 0
               : 0,
-            motherName: student.motherName || "N/A",
+            motherName: toTitleCase(student.motherName || "N/A"),
             motherMobile: student.motherMobile
-              ? parseInt(String(student.motherMobile))
+              ? parseInt(String(student.motherMobile)) || 0
               : 0,
             parentusn: parentUSN,
             gender: student.gender || "Male",
             modeOfTransport: student.modeOfTransport || "parent",
             createdAt: serverTimestamp() as Timestamp,
+            usnNumber: usnWithSuffix,
+            usn: usnWithSuffix,
           };
 
           const docRef = doc(db, "students", usnWithSuffix);
@@ -236,23 +247,64 @@ export const bulkUploadStudents = async (
  */
 export const getStudentByUSN = async (
   usn: string,
-): Promise<{ success: boolean; data?: AddStudentFormData; message: string }> => {
+): Promise<{
+  success: boolean;
+  data?: AddStudentFormData;
+  message: string;
+}> => {
   try {
-    const usnWithSuffix = usn.includes("_L01") ? usn : `${usn}_L01`;
-    const docRef = doc(db, "students", usnWithSuffix);
-    const docSnap = await getDoc(docRef);
+    const normalizedUsn = usn.trim();
+    // Strategy 1: Try with suffix (Standard)
+    const usnWithSuffix = normalizedUsn.includes("_L01") ? normalizedUsn : `${normalizedUsn}_L01`;
+    let docRef = doc(db, "students", usnWithSuffix);
+    let docSnap = await getDoc(docRef);
+
+    // Strategy 2: If not found, try raw USN as ID (Legacy/Other)
+    if (!docSnap.exists()) {
+      docRef = doc(db, "students", normalizedUsn);
+      docSnap = await getDoc(docRef);
+    }
+
+    // Strategy 3: Query by usnNumber field
+    if (!docSnap.exists()) {
+      const q = query(
+        collection(db, "students"),
+        where("usnNumber", "==", normalizedUsn),
+      );
+      const querySnap = await getDocs(q);
+      if (!querySnap.empty) {
+        docSnap = querySnap.docs[0] as unknown as DocumentSnapshot;
+      }
+    }
+
+    // Strategy 4: Query by usn field (Alternative field name)
+    if (!docSnap.exists()) {
+      const q = query(collection(db, "students"), where("usn", "==", normalizedUsn));
+      const querySnap = await getDocs(q);
+      if (!querySnap.empty) {
+        docSnap = querySnap.docs[0] as unknown as DocumentSnapshot;
+      }
+    }
 
     if (docSnap.exists()) {
       const data = docSnap.data();
+      // Determine the USN from ID or data
+      const id = docSnap.id;
+      const foundUsn =
+        data.usnNumber || data.usn || id.replace("_L01", "").replace("_P01", "");
+
       const formData: AddStudentFormData = {
         studentName: data.name || "",
         admissionNumber: data.admissionNumber || "",
         grade: data.grade || "PRE-KG",
         section: data.section || "nil",
         gender: data.gender || "Male",
-        usnNumber: usn.replace("_L01", ""),
+        usnNumber: foundUsn,
+        id: id, // Store the actual ID
         modeOfTransport: data.modeOfTransport || "parent",
-        parentCardNumber: data.parentusn ? data.parentusn.replace("_P01", "") : "",
+        parentCardNumber: data.parentusn
+          ? data.parentusn.replace("_P01", "")
+          : "",
         fatherName: data.fatherName === "N/A" ? "" : data.fatherName,
         fatherMobile: data.fatherMobile ? String(data.fatherMobile) : "",
         motherName: data.motherName === "N/A" ? "" : data.motherName,
@@ -284,53 +336,63 @@ export const getStudentByUSN = async (
  * Update an existing student in Firestore
  */
 export const updateStudentInFirestore = async (
-  originalUsn: string,
+  docId: string, // Use actual document ID
   formData: AddStudentFormData,
 ): Promise<{ success: boolean; message: string }> => {
   try {
     const newUsn = formData.usnNumber;
-    const isUsnChanged = originalUsn !== newUsn;
+    // Check if USN itself changed, we might want to rename the document ID
+    // but often it's better to stick with the original ID unless USN is the ID
+    const isUsnChanged = docId !== newUsn && !docId.startsWith(newUsn);
 
-    const oldDocId = originalUsn.includes("_L01") ? originalUsn : `${originalUsn}_L01`;
-    const newDocId = newUsn.includes("_L01") ? newUsn : `${newUsn}_L01`;
+    // If docId is already a proper suffix ID, and newUsn is just the base, 
+    // it's not really a "change" in current logic, just an update.
+    // However, if the user explicitly changes the USN field to something else:
+    const baseNewUsn = newUsn.replace(/(_L01|_P01)$/, "");
+    const baseOldId = docId.replace(/(_L01|_P01)$/, "");
+    const reallyChanged = baseNewUsn !== baseOldId;
+
+    const newDocId = `${baseNewUsn}_L01`;
 
     // Use parentCardNumber if provided, otherwise fallback to student USN
-    const parentBase = formData.parentCardNumber || newUsn;
-    const parentUSN = parentBase ? (parentBase.includes("_P01") ? parentBase : `${parentBase}_P01`) : "";
+    const parentBase = (formData.parentCardNumber || baseNewUsn || "").replace(/(_L01|_P01)$/, "");
+    const parentUSN = parentBase ? `${parentBase}_P01` : "";
 
     const firestoreData: FirestoreStudent = {
-      name: formData.studentName,
+      name: toTitleCase(formData.studentName),
       grade: formData.grade,
       section: formData.section || "nil",
       admissionNumber: formData.admissionNumber || "N/A",
       dob: formData.dob || "N/A",
-      fatherName: formData.fatherName || "N/A",
+      fatherName: toTitleCase(formData.fatherName || "N/A"),
       fatherMobile: formData.fatherMobile
-        ? parseInt(String(formData.fatherMobile))
+        ? parseInt(String(formData.fatherMobile)) || 0
         : 0,
-      motherName: formData.motherName || "N/A",
+      motherName: toTitleCase(formData.motherName || "N/A"),
       motherMobile: formData.motherMobile
-        ? parseInt(String(formData.motherMobile))
+        ? parseInt(String(formData.motherMobile)) || 0
         : 0,
       parentusn: parentUSN,
       gender: formData.gender || "Male",
       modeOfTransport: formData.modeOfTransport || "parent",
       createdAt: serverTimestamp() as Timestamp,
+      usnNumber: newDocId,
+      usn: newDocId,
     };
 
-    if (isUsnChanged) {
-      // Create new document
+    if (reallyChanged) {
+      // Create new document with new ID
       await setDoc(doc(db, "students", newDocId), firestoreData);
       // Delete old document
-      await deleteDoc(doc(db, "students", oldDocId));
+      await deleteDoc(doc(db, "students", docId));
 
       return {
         success: true,
-        message: `Student USN changed from ${originalUsn} to ${newUsn} and data updated!`,
+        message: `Student updated and USN changed to ${newUsn}!`,
       };
     } else {
-      // Update existing document
-      await setDoc(doc(db, "students", oldDocId), firestoreData, {
+      // Update existing document using its real ID
+      await setDoc(doc(db, "students", docId), firestoreData, {
         merge: true,
       });
 
@@ -352,15 +414,15 @@ export const updateStudentInFirestore = async (
  * Delete a student from Firestore
  */
 export const deleteStudentFromFirestore = async (
-  usn: string,
+  docId: string,
 ): Promise<{ success: boolean; message: string }> => {
   try {
-    const usnWithSuffix = usn.includes("_L01") ? usn : `${usn}_L01`;
-    await deleteDoc(doc(db, "students", usnWithSuffix));
+    // Directly delete using the known document ID
+    await deleteDoc(doc(db, "students", docId));
 
     return {
       success: true,
-      message: `Student with USN ${usn} deleted successfully!`,
+      message: `Student deleted successfully!`,
     };
   } catch (error) {
     console.error("Error deleting student:", error);
@@ -373,117 +435,69 @@ export const deleteStudentFromFirestore = async (
 
 /**
  * Fetch dashboard metrics from Firestore
+ * Entry/Exit counts reset daily at midnight
+ * @param targetDate - Optional date to fetch metrics for (defaults to today)
  */
-export const getDashboardMetrics = async () => {
+export const getDashboardMetrics = async (targetDate?: Date) => {
   try {
     const studentsSnap = await getDocs(collection(db, "students"));
     const totalStudents = studentsSnap.size;
 
-    // Try to locate an attendance-like collection and aggregate entry/exit counts.
-    const candidateCollections = ["attendance_logs"];
-
     let studentsEntry = 0;
     let studentExit = 0;
-    let foundAttendance = false;
 
-    for (const colName of candidateCollections) {
-      try {
-        const snap = await getDocs(collection(db, colName));
-        if (!snap.empty) {
-          foundAttendance = true;
-          // Only count attendance records from today (00:00 IST -> now)
-          const now = new Date();
-          const IST_OFFSET_MIN = 5 * 60 + 30; // +5:30
-          const nowIST = new Date(now.getTime() + IST_OFFSET_MIN * 60000);
-          const startOfDayIST = new Date(nowIST);
-          startOfDayIST.setHours(0, 0, 0, 0);
-          const startOfDay = new Date(startOfDayIST.getTime() - IST_OFFSET_MIN * 60000);
+    // Fetch attendance logs
+    const attendanceSnap = await getDocs(collection(db, "attendance_logs"));
 
-          snap.forEach((docSnap) => {
-            const data: any = docSnap.data() || {};
-
-            // Try to derive a timestamp from common fields
-            const tsCandidates = [data.timestamp, data.createdAt, data.time, data.ts, data.recordedAt];
-            let docDate: Date | null = null;
-
-            for (const candidate of tsCandidates) {
-              if (!candidate) continue;
-              // Firestore Timestamp or objects with toDate()
-              if (typeof candidate?.toDate === "function") {
-                try {
-                  docDate = candidate.toDate();
-                } catch (e) {
-                  // ignore and continue
-                }
-              } else if (candidate instanceof Timestamp) {
-                docDate = candidate.toDate();
-              } else if (typeof candidate === "number") {
-                docDate = new Date(candidate);
-              } else if (typeof candidate === "string") {
-                const parsed = new Date(candidate);
-                if (!isNaN(parsed.getTime())) docDate = parsed;
-              }
-              if (docDate) break;
-            }
-
-            // Fallback: try document createTime metadata if available
-            if (!docDate) {
-              const metaCreate: any = (docSnap as any).createTime;
-              if (metaCreate && typeof metaCreate.toDate === "function") {
-                try {
-                  docDate = metaCreate.toDate();
-                } catch (e) {
-                  // ignore
-                }
-              }
-            }
-
-            // If we couldn't find a timestamp, skip this doc for today's counts
-            if (!docDate) return;
-
-            // Only consider events from today (IST)
-            if (docDate < startOfDay || docDate > now) return;
-
-            // Possible field names that indicate direction/type (kept unchanged)
-            const candidates = [data.type, data.timestamp, data.createdAt,data.usn,data.wardName];
-            const combined = candidates.filter(Boolean).join(" ").toLowerCase();
-
-            if (combined.includes("entry") || combined.includes("in") || combined.includes("checkin") || combined.includes("check-in") || combined.includes("arrival")) {
-              studentsEntry += 1;
-            } else if (combined.includes("exit") || combined.includes("out") || combined.includes("checkout") || combined.includes("check-out") || combined.includes("departure")) {
-              studentExit += 1;
-            } else {
-              // If no explicit direction, try heuristics: numeric status flags
-              if (data?.direction === 1 || data?.status === "in" || data?.status === "inside") {
-                studentsEntry += 1;
-              } else if (data?.direction === -1 || data?.status === "out" || data?.status === "left") {
-                studentExit += 1;
-              }
-            }
-          });
-
-          // stop after first collection that appears to contain attendance-like docs
-          break;
-        }
-      } catch (err) {
-        // ignore and try next candidate collection
-      }
-    }
-
-    // If we couldn't find attendance documents, fall back to sample data from lib/data
-    if (!foundAttendance) {
+    if (attendanceSnap.empty) {
       return {
         totalStudents,
-        studentsEntry: dashboardStats.studentsEntry || 0,
-        studentExit: dashboardStats.studentExit || 0,
-        earlierPickups: dashboardStats.earlierPickups || 0,
-        afterSchool: dashboardStats.afterSchool || 0,
-        onVehicle: dashboardStats.campusExit || 0,
+        studentsEntry: 0,
+        studentExit: 0,
+        earlierPickups: 0,
+        afterSchool: 0,
+        onVehicle: 0,
         activeToday: 0,
         avgAttendance: 0,
         newStudents: 0,
       };
     }
+
+    // Use provided date or default to today
+    const queryDate = targetDate || new Date();
+    const startOfDay = new Date(queryDate);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(queryDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    attendanceSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+
+      // Get timestamp
+      let docDate = null;
+      if (data.timestamp && typeof data.timestamp.toDate === "function") {
+        try {
+          docDate = data.timestamp.toDate();
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Check if from selected date
+      if (!docDate || docDate < startOfDay || docDate > endOfDay) {
+        return;
+      }
+
+      // Count by type
+      const type = data.type;
+
+      if (type === "ENTRY") {
+        studentsEntry++;
+      } else if (type === "EXIT") {
+        studentExit++;
+      }
+    });
 
     return {
       totalStudents,
@@ -512,3 +526,137 @@ export const getDashboardMetrics = async () => {
   }
 };
 
+/**
+ * Fetch grade-wise attendance for a specific date
+ * Returns total strength and present count for each grade
+ * @param targetDate - Optional date to fetch attendance for (defaults to today)
+ */
+export const getGradeWiseAttendance = async (targetDate?: Date) => {
+  try {
+    // Get all students grouped by grade
+    const studentsSnap = await getDocs(collection(db, "students"));
+    const gradeMap: Record<
+      string,
+      { strength: number; presentUSNs: Set<string> }
+    > = {};
+
+    // Count total students per grade
+    studentsSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const grade = data.grade || "Unknown";
+
+      if (!gradeMap[grade]) {
+        gradeMap[grade] = { strength: 0, presentUSNs: new Set() };
+      }
+      gradeMap[grade].strength += 1;
+    });
+
+    // Use provided date or default to today
+    const queryDate = targetDate || new Date();
+    const startOfDay = new Date(queryDate);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(queryDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const attendanceSnap = await getDocs(collection(db, "attendance_logs"));
+
+    // Track students who have entered on selected date (and haven't exited after their last entry)
+    const studentStatus: Record<
+      string,
+      { lastAction: string; timestamp: Date }
+    > = {};
+
+    attendanceSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+
+      // Get timestamp
+      let docDate = null;
+      if (data.timestamp && typeof data.timestamp.toDate === "function") {
+        docDate = data.timestamp.toDate();
+      }
+
+      // Only process logs from selected date
+      if (!docDate || docDate < startOfDay || docDate > endOfDay) {
+        return;
+      }
+
+      const usn = data.usn;
+      const type = data.type;
+
+      if (!usn || !type) return;
+
+      // Update student status with latest action
+      if (!studentStatus[usn] || docDate > studentStatus[usn].timestamp) {
+        studentStatus[usn] = { lastAction: type, timestamp: docDate };
+      }
+    });
+
+    // Count present students (those whose last action was ENTRY)
+    Object.entries(studentStatus).forEach(([usn, status]) => {
+      if (status.lastAction === "ENTRY") {
+        // Find this student's grade
+        const studentDoc = studentsSnap.docs.find((doc) => doc.id === usn);
+        if (studentDoc) {
+          const grade = studentDoc.data().grade || "Unknown";
+          if (gradeMap[grade]) {
+            gradeMap[grade].presentUSNs.add(usn);
+          }
+        }
+      }
+    });
+
+    // Convert to array format
+    const gradeAttendance = Object.entries(gradeMap).map(([grade, data]) => ({
+      grade,
+      strength: data.strength,
+      present: data.presentUSNs.size,
+    }));
+
+    // Sort by grade
+    const gradeOrder = [
+      "PRE-KG",
+      "LKG",
+      "UKG",
+      "G1",
+      "G2",
+      "G3",
+      "G4",
+      "G5",
+      "G6",
+      "G7",
+      "G8",
+      "G9",
+      "G10",
+      "G11",
+      "G12",
+    ];
+    gradeAttendance.sort((a, b) => {
+      const indexA = gradeOrder.indexOf(a.grade);
+      const indexB = gradeOrder.indexOf(b.grade);
+      if (indexA === -1 && indexB === -1) return a.grade.localeCompare(b.grade);
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+
+    return gradeAttendance;
+  } catch (error) {
+    console.error("Error fetching grade-wise attendance:", error);
+    return [];
+  }
+};
+
+/**
+ * Helper to convert strings to Title Case (Camel Case style for names)
+ * Example: "JOHN DOE" -> "John Doe", "jane doe" -> "Jane Doe"
+ */
+export function toTitleCase(str: string | null | undefined): string {
+  if (!str || typeof str !== "string") return "N/A";
+  
+  return str
+    .toLowerCase()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}

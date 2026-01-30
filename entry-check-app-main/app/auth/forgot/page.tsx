@@ -45,7 +45,7 @@ export default function ForgotPage() {
       <div className="text-center mb-6">
         <div className="inline-block">
           <div className="w-14 h-14 rounded-md bg-purple-600 text-white flex items-center justify-center font-bold mx-auto">NS</div>
-          <div className="text-sm text-gray-600 mt-2">NestSchool — Entry Check</div>
+          <div className="text-sm text-gray-600 mt-2">The Nest School Admin Dashboard</div>
         </div>
       </div>
 

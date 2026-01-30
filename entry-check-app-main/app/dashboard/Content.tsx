@@ -1,18 +1,19 @@
-import { Home, Users, LogOut, Clock, Bus, DoorOpen } from "lucide-react";
+"use client";
+
 import { DashboardMetrics } from "@/components/dashboard-metrics";
 import { GradeAttendance } from "@/components/grade-attendance";
 import { CalendarWidget } from "@/components/calendar-widget";
 import { StudentTable } from "@/components/student-table";
 
-export default function DashboardContent() {
+export function DashboardContent() {
   return (
     <div className="p-6 space-y-6">
       {/* Admin Title */}
       <div className="flex justify-end">
-        <h1 className="text-2xl font-bold text-teal-600 italic">Admin-Xpert</h1>
+        <h1 className="text-2xl font-bold text-teal-600 italic">The Nest School Admin Dashboard</h1>
       </div>
 
-      {/* Stats Grid - Now fetches from Firebase */}
+      {/* Stats Grid - Now fetches from Firebase based on selected date */}
       <DashboardMetrics />
 
       {/* Main Content Grid */}
@@ -20,10 +21,10 @@ export default function DashboardContent() {
         {/* Calendar and Table */}
         <div className="lg:col-span-2 space-y-6">
           <CalendarWidget />
-          <StudentTable showTodayTransport compact />
+          
         </div>
 
-        {/* Grade Attendance */}
+        {/* Grade Attendance - Updates based on selected date */}
         <div>
           <GradeAttendance />
         </div>
