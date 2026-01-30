@@ -17,6 +17,7 @@ export interface FirebaseStudent {
   name: string;
   dob: string;
   grade: string;
+  section?: string;
   fatherName: string;
   fatherMobile: number;
   motherName: string;
@@ -47,11 +48,15 @@ export const useStudents = () => {
         const studentsList: Student[] = [];
         snapshot.forEach((doc) => {
           const data = doc.data() as FirebaseStudent;
+          const section = data.section && data.section !== "nil" && data.section !== "N/A" && data.section !== "NILL" ? data.section : "";
+          const fullGrade = section ? `${data.grade} ${section}` : data.grade;
+
           studentsList.push({
             ...data,
             id: doc.id,
             usn: doc.id,
             usnNumber: doc.id,
+            grade: fullGrade,
           });
         });
 
@@ -95,11 +100,15 @@ export const useStudentsByGrade = (grade: string) => {
         const studentsList: Student[] = [];
         snapshot.forEach((doc) => {
           const data = doc.data() as FirebaseStudent;
+          const section = data.section && data.section !== "nil" && data.section !== "N/A" && data.section !== "NILL" ? data.section : "";
+          const fullGrade = section ? `${data.grade} ${section}` : data.grade;
+
           studentsList.push({
             ...data,
             id: doc.id,
             usn: doc.id,
             usnNumber: doc.id,
+            grade: fullGrade,
           });
         });
 
@@ -149,11 +158,15 @@ export const useStudentsWithFilters = (filters?: {
         let studentsList: Student[] = [];
         snapshot.forEach((doc) => {
           const data = doc.data() as FirebaseStudent;
+          const section = data.section && data.section !== "nil" && data.section !== "N/A" && data.section !== "NILL" ? data.section : "";
+          const fullGrade = section ? `${data.grade} ${section}` : data.grade;
+
           studentsList.push({
             ...data,
             id: doc.id,
             usn: doc.id,
             usnNumber: doc.id,
+            grade: fullGrade,
           });
         });
 

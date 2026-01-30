@@ -37,7 +37,7 @@ export function StudentTable({
   ];
 
   const getGradeScore = (grade: string) => {
-    const baseGrade = grade.split(" ")[0];
+    const baseGrade = grade.split(" ")[0].replace("-", "");
     const index = gradeOrder.indexOf(baseGrade);
     return index === -1 ? 999 : index;
   };
