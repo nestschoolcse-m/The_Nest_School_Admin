@@ -110,7 +110,6 @@ export const addStudentToFirestore = async (
       };
     }
   } catch (error) {
-    console.error("Error adding student:", error);
     return {
       success: false,
       message: `Error adding student: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -324,7 +323,6 @@ export const getStudentByUSN = async (
       };
     }
   } catch (error) {
-    console.error("Error fetching student:", error);
     return {
       success: false,
       message: `Error fetching student: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -402,7 +400,6 @@ export const updateStudentInFirestore = async (
       };
     }
   } catch (error) {
-    console.error("Error updating student:", error);
     return {
       success: false,
       message: `Error updating student: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -425,7 +422,6 @@ export const deleteStudentFromFirestore = async (
       message: `Student deleted successfully!`,
     };
   } catch (error) {
-    console.error("Error deleting student:", error);
     return {
       success: false,
       message: `Error deleting student: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -511,7 +507,6 @@ export const getDashboardMetrics = async (targetDate?: Date) => {
       newStudents: 0,
     };
   } catch (error) {
-    console.error("Error fetching dashboard metrics:", error);
     return {
       totalStudents: 0,
       studentsEntry: 0,
@@ -642,7 +637,6 @@ export const getGradeWiseAttendance = async (targetDate?: Date) => {
 
     return gradeAttendance;
   } catch (error) {
-    console.error("Error fetching grade-wise attendance:", error);
     return [];
   }
 };

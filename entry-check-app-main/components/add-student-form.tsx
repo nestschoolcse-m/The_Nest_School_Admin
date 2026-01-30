@@ -135,7 +135,6 @@ export function AddStudentForm() {
         }
       }
     } catch (error) {
-      console.error("Form submission error:", error);
       toast.error("An error occurred. Please try again.");
     } finally {
       setLoading(false);
@@ -145,11 +144,9 @@ export function AddStudentForm() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
-      console.log("No file selected");
       return;
     }
 
-    console.log("File selected:", file.name, file.size);
 
     try {
       setLoading(true);
@@ -159,10 +156,8 @@ export function AddStudentForm() {
       // Parse file based on type
       let parsed;
       if (file.name.endsWith(".csv")) {
-        console.log("Parsing as CSV");
         parsed = await parseCSV(file);
       } else if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
-        console.log("Parsing as XLSX");
         parsed = await parseXLSX(file);
       } else {
         toast.error("Please upload a CSV or XLSX file");
@@ -171,7 +166,6 @@ export function AddStudentForm() {
         return;
       }
 
-      console.log("Parsed data:", parsed);
 
       setBulkFile(file);
       setParsedData(parsed);
@@ -192,7 +186,6 @@ export function AddStudentForm() {
         );
       }
     } catch (error) {
-      console.error("Error parsing file:", error);
       toast.error(
         `Error parsing file: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
@@ -236,7 +229,6 @@ export function AddStudentForm() {
         });
       }
     } catch (error) {
-      console.error("Error fetching student:", error);
       toast.error("An error occurred while fetching student details");
     } finally {
       setLoading(false);

@@ -21,7 +21,7 @@ try {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
 } catch (error) {
-  console.error("Firebase initialization error:", error);
+  // Silent error
 }
 
 export { db, app };

@@ -39,21 +39,14 @@ export const useStudents = () => {
     const fetchStudents = async () => {
       try {
         setLoading(true);
-        console.log("🔍 Fetching students from Firestore...");
-        console.log("Firebase Config:", {
-          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-          authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-        });
 
         const studentsCollection = collection(db, "students");
         const snapshot = await getDocs(studentsCollection);
 
-        console.log(`✅ Found ${snapshot.size} students in Firestore`);
 
         const studentsList: Student[] = [];
         snapshot.forEach((doc) => {
           const data = doc.data() as FirebaseStudent;
-          console.log(`📄 Document ID: ${doc.id}`, data);
           studentsList.push({
             ...data,
             id: doc.id,
@@ -65,7 +58,6 @@ export const useStudents = () => {
         setStudents(studentsList);
         setError(null);
       } catch (err) {
-        console.error("❌ Error fetching students:", err);
         setError(
           err instanceof Error ? err.message : "Failed to fetch students"
         );
@@ -114,7 +106,6 @@ export const useStudentsByGrade = (grade: string) => {
         setStudents(studentsList);
         setError(null);
       } catch (err) {
-        console.error("Error fetching students by grade:", err);
         setError(
           err instanceof Error ? err.message : "Failed to fetch students"
         );
@@ -176,7 +167,6 @@ export const useStudentsWithFilters = (filters?: {
         setStudents(studentsList);
         setError(null);
       } catch (err) {
-        console.error("Error fetching students with filters:", err);
         setError(
           err instanceof Error ? err.message : "Failed to fetch students"
         );

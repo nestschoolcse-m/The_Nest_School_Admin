@@ -24,7 +24,7 @@ export function GradeAttendance() {
       const data = await getGradeWiseAttendance(selectedDate);
       setGradeAttendance(data);
     } catch (error) {
-      console.error("Error fetching grade attendance:", error);
+      // Silent error
     } finally {
       setLoading(false);
     }

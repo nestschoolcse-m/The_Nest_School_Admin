@@ -26,7 +26,7 @@ export function DashboardMetrics() {
       setMetrics(data);
       setLastUpdated(new Date());
     } catch (error) {
-      console.error("Error fetching metrics:", error);
+      // Silent error
     } finally {
       setLoading(false);
     }

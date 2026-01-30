@@ -104,40 +104,31 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
     const arrayBuffer = await file.arrayBuffer();
     const workbook = XLSX.read(arrayBuffer, { type: "array" });
 
-    console.log("Loaded workbook with sheets:", workbook.SheetNames);
 
     const gradeMap: { [grade: string]: ParsedStudent[] } = {};
     const allErrors: string[] = [];
 
     for (const sheetName of workbook.SheetNames) {
-      console.log(`Processing sheet: ${sheetName}`);
       const worksheet = workbook.Sheets[sheetName];
       const rawData = XLSX.utils.sheet_to_json(worksheet, {
         header: 1,
       }) as any[];
 
       if (!rawData || rawData.length === 0) {
-        console.warn(`Sheet ${sheetName} is empty`);
         continue;
       }
 
-      console.log(`Sheet has ${rawData.length} rows total`);
 
       // Find header row (should be row 4, which is index 3)
       const headerResult = findXLSXHeaders(rawData);
       if (headerResult.headerIndex === -1) {
-        console.warn(`Could not find header row in sheet ${sheetName}`);
         allErrors.push(`Could not find header row in sheet ${sheetName}`);
         continue;
       }
 
-      console.log(
-        `Found headers at row ${headerResult.headerIndex + 1}: ${headerResult.headers.slice(0, 6).join(" | ")}`,
-      );
 
       // Map columns
       const columnMap = mapXLSXColumns(headerResult.headers);
-      console.log("Column mapping:", JSON.stringify(columnMap, null, 2));
 
       // CRITICAL FIX: Determine data start row based on header position
       // There are TWO structures in the Excel file:
@@ -150,17 +141,14 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
         const row4 = rawData[3];
         const isEmpty = !row4 || row4.every((cell: any) => !cell || String(cell).trim() === "");
         startRow = isEmpty ? 4 : 3; // row 5 or row 4 (0-indexed)
-        console.log(`LKG sheet detected - starting from row ${startRow + 1} (row 4 is ${isEmpty ? 'empty' : 'not empty'})`);
       } else {
         // Headers at row 4 or later - use standard structure
         startRow = 5; // row 6 (0-indexed)
-        console.log(`Standard sheet structure - starting from row ${startRow + 1}`);
       }
       
       let rowsProcessed = 0;
       let rowsSkipped = 0;
 
-      console.log(`Starting to process data rows from row ${startRow + 1}...`);
 
       for (let i = startRow; i < rawData.length; i++) {
         const row = rawData[i];
@@ -217,25 +205,16 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
           gradeMap[gradeFromSheet].push(student);
 
           if (rowsProcessed < 5) {
-            console.log(
-              `Row ${i + 1}: Parsed: "${student.name}" | Grade: ${student.grade} | USN: ${student.usn}`,
-            );
           }
           rowsProcessed++;
         } else {
           if (rowsProcessed < 5) {
             const firstName = row[columnMap["name"]] || "N/A";
-            console.log(
-              `Row ${i + 1}: Skipped - name="${firstName}" length=${String(firstName).length}, usn="${student.usn}"`,
-            );
           }
           rowsSkipped++;
         }
       }
 
-      console.log(
-        `Sheet ${sheetName}: Successfully parsed ${rowsProcessed} students, skipped ${rowsSkipped} rows`,
-      );
     }
 
     const grades = Object.keys(gradeMap).sort((a, b) => {
@@ -257,17 +236,9 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
       // If same number, sort sections alphabetically (G1 before G1 A)
       return a.localeCompare(b);
     });
-    console.log("Final grades found:", grades);
-    console.log(
-      "Students by grade:",
-      Object.fromEntries(
-        Object.entries(gradeMap).map(([g, s]) => [g, s.length]),
-      ),
-    );
 
     return { grades, students: gradeMap, errors: allErrors };
   } catch (error) {
-    console.error("Error parsing XLSX:", error);
     return {
       grades: [],
       students: {},
@@ -285,7 +256,6 @@ function findXLSXHeaders(data: any[]): {
   headerIndex: number;
   headers: string[];
 } {
-  console.log("Searching for headers in first 20 rows...");
 
   const commonHeaders = [
     "name",
@@ -335,24 +305,18 @@ function findXLSXHeaders(data: any[]): {
     if (lowerValues.some((h: string) => h.includes("usn"))) score += 3;
     if (lowerValues.some((h: string) => h.includes("grade"))) score += 3;
 
-    console.log(
-      `Row ${i}: [${lowerValues.slice(0, 4).join(", ")}...] | non-empty: ${hasNonEmptyCells} | score: ${score}`,
-    );
 
     if (score > bestScore) {
       bestScore = score;
       bestIndex = i;
       bestHeaders = lowerValues;
-      console.log(`New best match at row ${i} (score: ${score})`);
     }
   }
 
   if (bestIndex === -1) {
-    console.warn("Could not find header row");
     return { headerIndex: -1, headers: [] };
   }
 
-  console.log(`Selected row ${bestIndex} as headers`);
   return { headerIndex: bestIndex, headers: bestHeaders };
 }
 
@@ -395,7 +359,6 @@ function mapXLSXColumns(headers: string[]): {
       for (const alias of aliases) {
         if (header.includes(alias)) {
           mapping[field] = i;
-          console.log(`Mapped "${field}" to column ${i} (header: "${header}")`);
           break;
         }
       }
@@ -403,7 +366,6 @@ function mapXLSXColumns(headers: string[]): {
     }
   }
 
-  console.log("Final column mapping:", mapping);
   return mapping;
 }
 
