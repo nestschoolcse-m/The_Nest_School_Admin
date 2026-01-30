@@ -35,7 +35,7 @@ export function AddStudentForm() {
   const [formData, setFormData] = useState({
     studentName: "",
     admissionNumber: "",
-    grade: "PRE-KG",
+    grade: "PREKG",
     section: "A",
     gender: "Male",
     usnNumber: "",
@@ -75,7 +75,7 @@ export function AddStudentForm() {
           setFormData({
             studentName: "",
             admissionNumber: "",
-            grade: "PRE-KG",
+            grade: "PREKG",
             section: "A",
             gender: "Male",
             usnNumber: "",
@@ -116,7 +116,7 @@ export function AddStudentForm() {
           setFormData({
             studentName: "",
             admissionNumber: "",
-            grade: "PRE-KG",
+            grade: "PREKG",
             section: "A",
             gender: "Male",
             usnNumber: "",
@@ -214,7 +214,7 @@ export function AddStudentForm() {
         setFormData({
           studentName: "",
           admissionNumber: "",
-          grade: "PRE-KG",
+          grade: "PREKG",
           section: "A",
           gender: "Male",
           usnNumber: "",
@@ -340,7 +340,7 @@ export function AddStudentForm() {
             setFormData({
               studentName: "",
               admissionNumber: "",
-              grade: "PRE-KG",
+              grade: "PREKG",
               section: "A",
               gender: "Male",
               usnNumber: "",
@@ -371,7 +371,7 @@ export function AddStudentForm() {
             setFormData({
               studentName: "",
               admissionNumber: "",
-              grade: "PRE-KG",
+              grade: "PREKG",
               section: "A",
               gender: "Male",
               usnNumber: "",
@@ -402,7 +402,7 @@ export function AddStudentForm() {
             setFormData({
               studentName: "",
               admissionNumber: "",
-              grade: "PRE-KG",
+              grade: "PREKG",
               section: "A",
               gender: "Male",
               usnNumber: "",

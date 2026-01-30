@@ -295,7 +295,7 @@ export const getStudentByUSN = async (
       const formData: AddStudentFormData = {
         studentName: data.name || "",
         admissionNumber: data.admissionNumber || "",
-        grade: data.grade || "PRE-KG",
+        grade: data.grade || "PREKG",
         section: data.section || "nil",
         gender: data.gender || "Male",
         usnNumber: foundUsn,
@@ -610,7 +610,7 @@ export const getGradeWiseAttendance = async (targetDate?: Date) => {
 
     // Sort by grade
     const gradeOrder = [
-      "PRE-KG",
+      "PREKG",
       "LKG",
       "UKG",
       "G1",
