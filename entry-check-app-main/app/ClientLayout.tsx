@@ -3,6 +3,8 @@ import React, { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
+import { auth } from "@/lib/firebase-client"
+import { onAuthStateChanged } from "firebase/auth"
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -10,22 +12,27 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const [checked, setChecked] = useState(false)
 
   useEffect(() => {
-    // Check auth status from localStorage
-    const current = typeof window !== "undefined" ? localStorage.getItem("nest_current_user") : null
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      // If user is on /auth pages, allow showing them regardless of auth
+      if (pathname?.startsWith("/auth")) {
+        setChecked(true)
+        return
+      }
 
-    // If user is on /auth pages, allow showing them regardless of auth
-    if (pathname?.startsWith("/auth")) {
+      // If not authenticated, redirect to /auth
+      if (!user) {
+        // Fallback check for localStorage during transition/refresh
+        const current = localStorage.getItem("nest_current_user")
+        if (!current) {
+          router.replace("/auth")
+          return
+        }
+      }
+
       setChecked(true)
-      return
-    }
+    })
 
-    // If not authenticated, redirect to /auth
-    if (!current) {
-      router.replace("/auth")
-      return
-    }
-
-    setChecked(true)
+    return () => unsubscribe()
   }, [pathname, router])
 
   if (!checked) return null

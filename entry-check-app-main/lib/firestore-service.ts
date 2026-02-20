@@ -14,9 +14,11 @@ import {
   query,
   where,
   DocumentSnapshot,
+  getCountFromServer,
 } from "firebase/firestore";
 import { db } from "./firebase-client";
 import { dashboardStats } from "./data";
+import { normalizeGrade, parseGradeSection } from "./file-parser";
 
 // Interface for form data (includes fields not in database)
 export interface AddStudentFormData {
@@ -72,7 +74,7 @@ export const addStudentToFirestore = async (
 
     const firestoreData: FirestoreStudent = {
       name: toTitleCase(formData.studentName),
-      grade: formData.grade,
+      grade: normalizeGrade(formData.grade) || formData.grade,
       section: formData.section || "nil",
       admissionNumber: formData.admissionNumber || "N/A",
       dob: formData.dob || "N/A",
@@ -292,11 +294,15 @@ export const getStudentByUSN = async (
       const foundUsn =
         data.usnNumber || data.usn || id.replace("_L01", "").replace("_P01", "");
 
+      const gradeInfo = parseGradeSection(data.grade);
+      const finalGrade = gradeInfo.grade || "PREKG";
+      const finalSection = data.section && data.section !== "nil" ? data.section : gradeInfo.section;
+
       const formData: AddStudentFormData = {
         studentName: data.name || "",
         admissionNumber: data.admissionNumber || "",
-        grade: data.grade || "PREKG",
-        section: data.section || "nil",
+        grade: finalGrade,
+        section: finalSection,
         gender: data.gender || "Male",
         usnNumber: foundUsn,
         id: id, // Store the actual ID
@@ -358,7 +364,7 @@ export const updateStudentInFirestore = async (
 
     const firestoreData: FirestoreStudent = {
       name: toTitleCase(formData.studentName),
-      grade: formData.grade,
+      grade: normalizeGrade(formData.grade) || formData.grade,
       section: formData.section || "nil",
       admissionNumber: formData.admissionNumber || "N/A",
       dob: formData.dob || "N/A",
@@ -436,28 +442,9 @@ export const deleteStudentFromFirestore = async (
  */
 export const getDashboardMetrics = async (targetDate?: Date) => {
   try {
-    const studentsSnap = await getDocs(collection(db, "students"));
-    const totalStudents = studentsSnap.size;
-
-    let studentsEntry = 0;
-    let studentExit = 0;
-
-    // Fetch attendance logs
-    const attendanceSnap = await getDocs(collection(db, "attendance_logs"));
-
-    if (attendanceSnap.empty) {
-      return {
-        totalStudents,
-        studentsEntry: 0,
-        studentExit: 0,
-        earlierPickups: 0,
-        afterSchool: 0,
-        onVehicle: 0,
-        activeToday: 0,
-        avgAttendance: 0,
-        newStudents: 0,
-      };
-    }
+    const studentsCollection = collection(db, "students");
+    const studentsCountSnap = await getCountFromServer(studentsCollection);
+    const totalStudents = studentsCountSnap.data().count;
 
     // Use provided date or default to today
     const queryDate = targetDate || new Date();
@@ -467,25 +454,20 @@ export const getDashboardMetrics = async (targetDate?: Date) => {
     const endOfDay = new Date(queryDate);
     endOfDay.setHours(23, 59, 59, 999);
 
+    // Fetch ONLY documents from the selected date range
+    const logsCollection = collection(db, "attendance_logs");
+    const q = query(
+      logsCollection,
+      where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+      where("timestamp", "<=", Timestamp.fromDate(endOfDay))
+    );
+    const attendanceSnap = await getDocs(q);
+
+    let studentsEntry = 0;
+    let studentExit = 0;
+
     attendanceSnap.forEach((docSnap) => {
       const data = docSnap.data();
-
-      // Get timestamp
-      let docDate = null;
-      if (data.timestamp && typeof data.timestamp.toDate === "function") {
-        try {
-          docDate = data.timestamp.toDate();
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      // Check if from selected date
-      if (!docDate || docDate < startOfDay || docDate > endOfDay) {
-        return;
-      }
-
-      // Count by type
       const type = data.type;
 
       if (type === "ENTRY") {
@@ -507,6 +489,7 @@ export const getDashboardMetrics = async (targetDate?: Date) => {
       newStudents: 0,
     };
   } catch (error) {
+    console.error("Error fetching metrics:", error);
     return {
       totalStudents: 0,
       studentsEntry: 0,
@@ -554,36 +537,32 @@ export const getGradeWiseAttendance = async (targetDate?: Date) => {
     const endOfDay = new Date(queryDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const attendanceSnap = await getDocs(collection(db, "attendance_logs"));
+    // Fetch ONLY documents from the selected date range
+    const logsCollection = collection(db, "attendance_logs");
+    const q = query(
+      logsCollection,
+      where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
+      where("timestamp", "<=", Timestamp.fromDate(endOfDay))
+    );
+    const attendanceSnap = await getDocs(q);
 
-    // Track students who have entered on selected date (and haven't exited after their last entry)
+    // Track students who have entered on selected date
     const studentStatus: Record<
       string,
-      { lastAction: string; timestamp: Date }
+      { lastAction: string; timestamp: Timestamp }
     > = {};
 
     attendanceSnap.forEach((docSnap) => {
       const data = docSnap.data();
-
-      // Get timestamp
-      let docDate = null;
-      if (data.timestamp && typeof data.timestamp.toDate === "function") {
-        docDate = data.timestamp.toDate();
-      }
-
-      // Only process logs from selected date
-      if (!docDate || docDate < startOfDay || docDate > endOfDay) {
-        return;
-      }
-
       const usn = data.usn;
       const type = data.type;
+      const ts = data.timestamp as Timestamp;
 
-      if (!usn || !type) return;
+      if (!usn || !type || !ts) return;
 
       // Update student status with latest action
-      if (!studentStatus[usn] || docDate > studentStatus[usn].timestamp) {
-        studentStatus[usn] = { lastAction: type, timestamp: docDate };
+      if (!studentStatus[usn] || ts.toMillis() > studentStatus[usn].timestamp.toMillis()) {
+        studentStatus[usn] = { lastAction: type, timestamp: ts };
       }
     });
 

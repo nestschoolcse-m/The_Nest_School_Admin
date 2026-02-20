@@ -39,7 +39,7 @@ export function GradeAttendance() {
   useEffect(() => {
     if (!isToday) return;
 
-    const interval = setInterval(fetchGradeAttendance, 60000);
+    const interval = setInterval(fetchGradeAttendance, 300000); // 5 minutes refresh
     return () => clearInterval(interval);
   }, [isToday, selectedDate]);
 

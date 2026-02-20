@@ -52,15 +52,15 @@ export async function parseCSV(file: File): Promise<ParsedFileData> {
           if (parts.length < 4) continue;
 
           const name = parts[1] || null;
-          const grade = normalizeGrade(parts[2] || null);
+          const gradeInfo = parseGradeSection(parts[2] || null);
           const usn = parts[3] || null;
 
           if (!name && !usn) continue;
 
           const student: ParsedStudent = {
             name,
-            grade,
-            section: parts[9] || "nil",
+            grade: gradeInfo.grade,
+            section: parts[9] && parts[9] !== "nil" ? parts[9] : gradeInfo.section,
             admissionNumber: parts[0] || null, // Assuming 1st column is Admission No in CSV
             usn,
             dob: parts[4] || null,
@@ -72,9 +72,9 @@ export async function parseCSV(file: File): Promise<ParsedFileData> {
           };
 
           students.push(student);
-          if (grade) {
-            if (!gradeMap[grade]) gradeMap[grade] = [];
-            gradeMap[grade].push(student);
+          if (gradeInfo.grade) {
+            if (!gradeMap[gradeInfo.grade]) gradeMap[gradeInfo.grade] = [];
+            gradeMap[gradeInfo.grade].push(student);
           }
         }
 
@@ -188,7 +188,8 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
         if (student.usn || (student.name && student.name.length >= 2)) {
           // IMPORTANT: Use sheet name to determine grade (preserves sections like "GR 1 A", "LKG B")
           // The grade column in data often doesn't have section letters
-          const gradeFromSheet = normalizeGrade(sheetName);
+          const sheetGradeInfo = parseGradeSection(sheetName);
+          const gradeFromSheet = sheetGradeInfo.grade;
           
           // Only add if grade is valid (not null after normalization)
           if (!gradeFromSheet) {
@@ -196,8 +197,11 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
             continue;
           }
           
-          // Override the student's grade with the sheet-based grade (which has the section)
+          // Override the student's grade and section with sheet-based info if needed
           student.grade = gradeFromSheet;
+          if (student.section === "nil" || !student.section) {
+            student.section = sheetGradeInfo.section;
+          }
 
           if (!gradeMap[gradeFromSheet]) {
             gradeMap[gradeFromSheet] = [];
@@ -450,10 +454,13 @@ function extractStudentFromXLSXRow(
   const motherMobile = getValue("motherMobile");
   const gender = getValue("gender");
 
+  const gradeInfo = parseGradeSection(gradeRaw);
+  const finalSection = section && section !== "nil" ? section : gradeInfo.section;
+
   return {
     name,
-    grade: gradeRaw ? normalizeGrade(gradeRaw) : null,
-    section: section || "nil",
+    grade: gradeInfo.grade,
+    section: finalSection,
     admissionNumber,
     usn,
     dob,
@@ -471,62 +478,91 @@ function extractStudentFromXLSXRow(
  * Converts: "GR 1 A", "Grade 9", "UKG A", "PRE KG B" -> "PREKG A", "LKG B", "UKG C", "G1", "G1 A", "G9", etc
  * PRESERVES SECTION LETTERS
  */
+/**
+ * Normalizes a grade string to a standard format (PREKG, LKG, UKG, G1-G10)
+ * Also handles Roman numerals (I-X)
+ * Returns the grade part only.
+ */
 export function normalizeGrade(grade: string | null): string | null {
   if (!grade) return null;
 
-  grade = String(grade).trim().toUpperCase();
+  let str = String(grade).trim().toUpperCase();
+  
+  // Remove common prefixes
+  str = str.replace(/^(GRADE|GR|CLASS|STANDARD|SEC|SECTION)\s+/i, "").trim();
 
-  // Extract section letter if present (A, B, C, etc.)
-  const sectionMatch = grade.match(/\b([A-Z])\s*$/);
-  const section = sectionMatch ? sectionMatch[1] : "";
+  // Handle Pre-Primary
+  if (str.includes("PREKG") || str.includes("PRE-KG") || (str.includes("PRE") && str.includes("KG"))) return "PREKG";
+  if (str.includes("LKG") || str.includes("L.K.G")) return "LKG";
+  if (str.includes("UKG") || str.includes("U.K.G")) return "UKG";
 
-  // Handle special pre-primary grades WITH SECTIONS
-  if (
-    grade.includes("PREKG") ||
-    grade.includes("PRE-KG") ||
-    grade.includes("PRE KG")
-  ) {
-    return section ? `PREKG ${section}` : "PREKG";
-  }
-  if (grade.includes("LKG") || grade.includes("L.K.G")) {
-    return section ? `LKG ${section}` : "LKG";
-  }
-  if (grade.includes("UKG") || grade.includes("U.K.G")) {
-    return section ? `UKG ${section}` : "UKG";
-  }
+  // Handle Roman Numerals (I to X)
+  const romanMap: { [key: string]: string } = {
+    I: "G1", II: "G2", III: "G3", IV: "G4", V: "G5",
+    VI: "G6", VII: "G7", VIII: "G8", IX: "G9", X: "G10"
+  };
 
-  // Remove common prefixes for numbered grades
-  grade = grade
-    .replace(/^(GRADE|GR|CLASS|STANDARD|SEC|SECTION)\s+/i, "")
-    .trim();
-
-  // Extract the grade number and section (only accept 1-10)
-  const match = grade.match(/^(\d+)(?:\s*([A-Z]))?/);
-  if (match) {
-    const gradeNum = parseInt(match[1], 10);
-
-    // Only accept grades 1-10
-    if (gradeNum >= 1 && gradeNum <= 10) {
-      const matchSection = match[2] || "";
-      return `G${gradeNum}${matchSection ? ` ${matchSection}` : ""}`.trim();
+  // Check for Roman numerals at the start (even without space, like "IVA")
+  const romanMatch = str.match(/^(X|IX|VIII|VII|VI|V|IV|III|II|I)/);
+  if (romanMatch) {
+    // Check if the rest is just section or empty
+    const remaining = str.substring(romanMatch[0].length).trim();
+    if (remaining === "" || /^[A-Z]$/.test(remaining) || /^[\s-][A-Z]$/.test(remaining)) {
+      return romanMap[romanMatch[1]];
     }
-
-    return null; // Invalid grade number
   }
 
-  // If it already looks like G1, G9 A, etc
-  if (/^G(\d+)/.test(grade)) {
-    const numMatch = grade.match(/^G(\d+)(?:\s*([A-Z]))?/);
-    if (numMatch) {
-      const gradeNum = parseInt(numMatch[1], 10);
-      if (gradeNum >= 1 && gradeNum <= 10) {
-        const matchSection = numMatch[2] || "";
-        return `G${gradeNum}${matchSection ? ` ${matchSection}` : ""}`.trim();
-      }
-    }
-    return null;
+  // Handle G1, G2, etc.
+  const gMatch = str.match(/^G(\d+)/i);
+  if (gMatch) {
+    const num = parseInt(gMatch[1], 10);
+    if (num >= 1 && num <= 10) return `G${num}`;
   }
 
-  // Fallback: return null for invalid grades
+  // Handle plain numbers (1, 2, 3...)
+  const numMatch = str.match(/^(\d+)/);
+  if (numMatch) {
+    const num = parseInt(numMatch[1], 10);
+    if (num >= 1 && num <= 10) return `G${num}`;
+  }
+
   return null;
+}
+
+/**
+ * Parses a string that might contain both grade and section
+ * Example: "IV A" -> { grade: "G4", section: "A" }
+ * Example: "IVA" -> { grade: "G4", section: "A" }
+ * Example: "4B" -> { grade: "G4", section: "B" }
+ */
+export function parseGradeSection(gradeStr: string | null): { grade: string, section: string } {
+  if (!gradeStr) return { grade: "PREKG", section: "nil" };
+
+  const fullStr = String(gradeStr).trim().toUpperCase();
+  const normalizedGrade = normalizeGrade(fullStr);
+  
+  if (!normalizedGrade) return { grade: "PREKG", section: "nil" };
+
+  // Determine section by looking at what's left after removing the grade part
+  // We need to be careful with Roman numerals vs G-numbers
+  
+  let section = "";
+  
+  // Try to extract section from the end
+  const sectionMatch = fullStr.match(/[\s-]?([A-Z])$/);
+  if (sectionMatch) {
+    const potentialSection = sectionMatch[1];
+    
+    // Check if this potential section is not part of the grade itself (like the 'G' in PG?)
+    // But since we already normalized, we can check if fullStr without this last part still normalizes to the same thing
+    const basePart = fullStr.substring(0, fullStr.lastIndexOf(potentialSection)).trim();
+    if (normalizeGrade(basePart) === normalizedGrade || basePart === "") {
+      section = potentialSection;
+    }
+  }
+
+  return {
+    grade: normalizedGrade,
+    section: section || "nil"
+  };
 }

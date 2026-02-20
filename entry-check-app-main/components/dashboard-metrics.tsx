@@ -41,7 +41,7 @@ export function DashboardMetrics() {
   useEffect(() => {
     if (!isToday) return;
 
-    const interval = setInterval(fetchMetrics, 60000);
+    const interval = setInterval(fetchMetrics, 300000); // Refresh every 5 minutes instead of 1
     return () => clearInterval(interval);
   }, [isToday, selectedDate]);
 

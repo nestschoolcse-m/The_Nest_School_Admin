@@ -4,6 +4,8 @@ import { Bell, User } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { auth } from "@/lib/firebase-client"
+import { onAuthStateChanged, signOut } from "firebase/auth"
 
 export function Header() {
   const currentDate = new Date().toLocaleDateString("en-GB", {
@@ -18,13 +20,16 @@ export function Header() {
   const router = useRouter()
 
   useEffect(() => {
-    const u = typeof window !== "undefined" ? localStorage.getItem("nest_current_user") : null
-    setUsername(u)
-
-    function onStorage(e: StorageEvent) {
-      if (e.key === "nest_current_user") setUsername(e.newValue)
-    }
-    window.addEventListener("storage", onStorage)
+    // Listen to Firebase Auth state
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUsername(user.email || user.uid)
+        // Sync to localStorage/cookie in case it was missed
+        localStorage.setItem("nest_current_user", user.email || user.uid)
+      } else {
+        setUsername(null)
+      }
+    })
 
     function onDocClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
@@ -32,18 +37,19 @@ export function Header() {
     document.addEventListener("click", onDocClick)
 
     return () => {
-      window.removeEventListener("storage", onStorage)
+      unsubscribe()
       document.removeEventListener("click", onDocClick)
     }
   }, [])
 
-  function handleLogout() {
+  async function handleLogout() {
     try {
+      await signOut(auth)
       localStorage.removeItem("nest_current_user")
       // remove cookie so middleware will redirect unauthenticated
       document.cookie = "nest_current_user=; Path=/; Max-Age=0; SameSite=Lax"
     } catch (e) {
-      // ignore
+      console.error("Logout error:", e)
     }
     setUsername(null)
     setOpen(false)
