@@ -279,6 +279,8 @@ export const grades = [
   "G8",
   "G9",
   "G10",
+  "G11",
+  "G12",
 ];
 export const sections = ["NILL", "A", "B", "C"];
 export const genders = ["Male", "Female"];

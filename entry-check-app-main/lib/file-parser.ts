@@ -21,6 +21,7 @@ export interface ParsedFileData {
   grades: string[];
   students: { [grade: string]: ParsedStudent[] };
   errors: string[];
+  deleteStudents?: ParsedStudent[];
 }
 
 /**
@@ -106,9 +107,11 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
 
 
     const gradeMap: { [grade: string]: ParsedStudent[] } = {};
+    const deleteStudents: ParsedStudent[] = [];
     const allErrors: string[] = [];
 
     for (const sheetName of workbook.SheetNames) {
+      const isDeleteSheet = sheetName.toLowerCase().replace(/['"]/g, "").trim() === "transfer certificate 2025-26";
       const worksheet = workbook.Sheets[sheetName];
       const rawData = XLSX.utils.sheet_to_json(worksheet, {
         header: 1,
@@ -130,31 +133,22 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
       // Map columns
       const columnMap = mapXLSXColumns(headerResult.headers);
 
-      // CRITICAL FIX: Determine data start row based on header position
-      // There are TWO structures in the Excel file:
-      // Structure 1 (LKG sheets): Headers at row 2 (index 1), instructions at row 3, data starts at row 4 or 5
-      // Structure 2 (most sheets): Headers at row 4 (index 3), instructions at row 5, data starts at row 6 (index 5)
-      let startRow: number;
-      if (headerResult.headerIndex === 1) {
-        // Headers at row 2 - this is LKG structure
-        // Check if row 4 (index 3) is empty, if so start from row 5
-        const row4 = rawData[3];
-        const isEmpty = !row4 || row4.every((cell: any) => !cell || String(cell).trim() === "");
-        startRow = isEmpty ? 4 : 3; // row 5 or row 4 (0-indexed)
-      } else {
-        // Headers at row 4 or later - use standard structure
-        startRow = 5; // row 6 (0-indexed)
-      }
+      // CRITICAL FIX: Determine data start row based on header position dynamically.
+      // The headers are at headerResult.headerIndex. The row immediately following headers is instructions.
+      // The data starts at headerResult.headerIndex + 2.
+      const startRow = headerResult.headerIndex + 2;
       
       let rowsProcessed = 0;
       let rowsSkipped = 0;
 
+      allErrors.push(`[Sheet Diagnostics: ${sheetName}] Headers found at Row ${headerResult.headerIndex + 1}: ${JSON.stringify(headerResult.headers)}. Mapped columns: ${JSON.stringify(columnMap)}`);
 
       for (let i = startRow; i < rawData.length; i++) {
         const row = rawData[i];
 
         if (!row || row.length === 0) {
           rowsSkipped++;
+          allErrors.push(`[Row ${i + 1}] Skip reason: Row is completely empty.`);
           continue;
         }
 
@@ -168,9 +162,7 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
           .join(" ");
 
         const isInstructionRow =
-          rowContent.includes("select") ||
           rowContent.includes("list entire") ||
-          rowContent.includes("type") ||
           rowContent.includes("indicate in detail") ||
           rowContent.includes("enter grade") ||
           rowContent.includes("email id") ||
@@ -179,6 +171,7 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
 
         if (isInstructionRow) {
           rowsSkipped++;
+          allErrors.push(`[Row ${i + 1}] Skip reason: Matched instruction pattern (content: "${rowContent.substring(0, 60)}...").`);
           continue;
         }
 
@@ -186,19 +179,35 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
 
         // Accept if we have USN or valid name (at least 2 chars)
         if (student.usn || (student.name && student.name.length >= 2)) {
-          // IMPORTANT: Use sheet name to determine grade (preserves sections like "GR 1 A", "LKG B")
-          // The grade column in data often doesn't have section letters
+          if (isDeleteSheet) {
+            if (student.usn) {
+              deleteStudents.push(student);
+              rowsProcessed++;
+              allErrors.push(`[Row ${i + 1}] Success: Parsed student "${student.name || "N/A"}" (USN: "${student.usn}") for deletion.`);
+            } else {
+              rowsSkipped++;
+              allErrors.push(`[Row ${i + 1}] Skip reason: Student "${student.name || "Unknown"}" has no USN, cannot delete.`);
+            }
+            continue;
+          }
+
+          // IMPORTANT: Use sheet name as a fallback to determine grade and section
           const sheetGradeInfo = parseGradeSection(sheetName);
           const gradeFromSheet = sheetGradeInfo.grade;
           
-          // Only add if grade is valid (not null after normalization)
-          if (!gradeFromSheet) {
+          // Trust the row's parsed grade if it is valid (not default PREKG). Otherwise fallback to sheet grade.
+          if (!student.grade || student.grade === "PREKG") {
+            student.grade = gradeFromSheet;
+          }
+          
+          // Only add if grade is valid
+          if (!student.grade) {
             rowsSkipped++;
+            allErrors.push(`[Row ${i + 1}] Skip reason: Invalid/unsupported grade parsed ("${student.grade}").`);
             continue;
           }
           
-          // Override the student's grade and section with sheet-based info if needed
-          student.grade = gradeFromSheet;
+          // Trust the row's parsed section if it is valid (not nil/empty). Otherwise fallback to sheet section.
           if (student.section === "nil" || !student.section) {
             student.section = sheetGradeInfo.section;
           }
@@ -207,15 +216,11 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
             gradeMap[gradeFromSheet] = [];
           }
           gradeMap[gradeFromSheet].push(student);
-
-          if (rowsProcessed < 5) {
-          }
           rowsProcessed++;
+          allErrors.push(`[Row ${i + 1}] Success: Parsed student "${student.name || "N/A"}" (USN: "${student.usn || "N/A"}") under grade "${gradeFromSheet}" section "${student.section}".`);
         } else {
-          if (rowsProcessed < 5) {
-            const firstName = row[columnMap["name"]] || "N/A";
-          }
           rowsSkipped++;
+          allErrors.push(`[Row ${i + 1}] Skip reason: No USN found and student name ("${student.name || ""}") is less than 2 characters.`);
         }
       }
 
@@ -241,7 +246,7 @@ export async function parseXLSX(file: File): Promise<ParsedFileData> {
       return a.localeCompare(b);
     });
 
-    return { grades, students: gradeMap, errors: allErrors };
+    return { grades, students: gradeMap, errors: allErrors, deleteStudents };
   } catch (error) {
     return {
       grades: [],
@@ -282,13 +287,11 @@ function findXLSXHeaders(data: any[]): {
     const row = data[i];
     if (!row || row.length < 3) continue;
 
-    const lowerValues: string[] = row
-      .map((v: any) =>
-        String(v || "")
-          .toLowerCase()
-          .trim(),
-      )
-      .filter((v: string): v is string => v !== null && v !== undefined);
+    // Convert sparse array to a packed array matching the actual indices by avoiding filter skips
+    const lowerValues: string[] = Array.from({ length: row.length }, (_, idx) => {
+      const v = row[idx];
+      return String(v || "").toLowerCase().trim();
+    });
 
     const hasNonEmptyCells = lowerValues.filter(
       (v: string) => v.length > 0,
@@ -488,22 +491,23 @@ export function normalizeGrade(grade: string | null): string | null {
 
   let str = String(grade).trim().toUpperCase();
   
-  // Remove common prefixes
-  str = str.replace(/^(GRADE|GR|CLASS|STANDARD|SEC|SECTION)\s+/i, "").trim();
+  // Remove common prefixes (allow optional spaces after prefix)
+  str = str.replace(/^(GRADE|GR|CLASS|STANDARD|SEC|SECTION)\s*/i, "").trim();
 
   // Handle Pre-Primary
   if (str.includes("PREKG") || str.includes("PRE-KG") || (str.includes("PRE") && str.includes("KG"))) return "PREKG";
   if (str.includes("LKG") || str.includes("L.K.G")) return "LKG";
   if (str.includes("UKG") || str.includes("U.K.G")) return "UKG";
 
-  // Handle Roman Numerals (I to X)
+  // Handle Roman Numerals (I to XII)
   const romanMap: { [key: string]: string } = {
     I: "G1", II: "G2", III: "G3", IV: "G4", V: "G5",
-    VI: "G6", VII: "G7", VIII: "G8", IX: "G9", X: "G10"
+    VI: "G6", VII: "G7", VIII: "G8", IX: "G9", X: "G10",
+    XI: "G11", XII: "G12"
   };
 
   // Check for Roman numerals at the start (even without space, like "IVA")
-  const romanMatch = str.match(/^(X|IX|VIII|VII|VI|V|IV|III|II|I)/);
+  const romanMatch = str.match(/^(XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)/);
   if (romanMatch) {
     // Check if the rest is just section or empty
     const remaining = str.substring(romanMatch[0].length).trim();
@@ -512,18 +516,18 @@ export function normalizeGrade(grade: string | null): string | null {
     }
   }
 
-  // Handle G1, G2, etc.
-  const gMatch = str.match(/^G(\d+)/i);
+  // Handle G1, G2, etc. (allow optional spaces, e.g. "G 9", "G10")
+  const gMatch = str.match(/^G\s*(\d+)/i);
   if (gMatch) {
     const num = parseInt(gMatch[1], 10);
-    if (num >= 1 && num <= 10) return `G${num}`;
+    if (num >= 1 && num <= 12) return `G${num}`;
   }
 
   // Handle plain numbers (1, 2, 3...)
   const numMatch = str.match(/^(\d+)/);
   if (numMatch) {
     const num = parseInt(numMatch[1], 10);
-    if (num >= 1 && num <= 10) return `G${num}`;
+    if (num >= 1 && num <= 12) return `G${num}`;
   }
 
   return null;

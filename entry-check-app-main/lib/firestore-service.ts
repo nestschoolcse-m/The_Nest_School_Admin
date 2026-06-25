@@ -139,6 +139,7 @@ export interface BulkUploadStudent {
 
 export const bulkUploadStudents = async (
   students: BulkUploadStudent[],
+  preventDuplicates = true,
 ): Promise<{
   success: boolean;
   message: string;
@@ -161,12 +162,55 @@ export const bulkUploadStudents = async (
       };
     }
 
+    // 1. Deduplicate students within the input file list itself (first occurrence wins)
+    const seenLocalUSNs = new Set<string>();
+    const fileUniqueStudents = students.filter((s) => {
+      if (!s.usn) return true; // Let validation fail it below
+      const baseUSN = s.usn.trim().replace(/(_L01|_P01)$/, "");
+      const usnWithSuffix = baseUSN ? `${baseUSN}_L01` : "";
+      if (seenLocalUSNs.has(usnWithSuffix)) {
+        errors.push(`Student "${s.name || "Unknown"}": Duplicate USN in file (${s.usn}), skipping.`);
+        failedCount++;
+        return false;
+      }
+      seenLocalUSNs.add(usnWithSuffix);
+      return true;
+    });
+
+    // 2. Fetch existing students in Firestore if preventDuplicates is enabled
+    const existingUSNs = preventDuplicates
+      ? await checkExistingStudents(fileUniqueStudents.map((s) => s.usn).filter(Boolean) as string[])
+      : new Set<string>();
+
+    // 3. Filter out students that already exist in Firestore
+    const studentsToUpload = fileUniqueStudents.filter((s) => {
+      if (!s.usn) return true;
+      const baseUSN = s.usn.trim().replace(/(_L01|_P01)$/, "");
+      const usnWithSuffix = baseUSN ? `${baseUSN}_L01` : "";
+      if (existingUSNs.has(usnWithSuffix)) {
+        errors.push(`Student "${s.name || "Unknown"}": Already exists in database (${usnWithSuffix}), skipping.`);
+        failedCount++;
+        return false;
+      }
+      return true;
+    });
+
+    if (studentsToUpload.length === 0) {
+      return {
+        success: true,
+        message: `No new students to upload. All students already exist or are duplicates.`,
+        uploaded: 0,
+        failed: failedCount,
+        errors,
+      };
+    }
+
     const batchSize = 500;
     const batches = [];
 
-    for (let i = 0; i < students.length; i += batchSize) {
+    for (let i = 0; i < studentsToUpload.length; i += batchSize) {
       const batch = writeBatch(db);
-      const batchStudents = students.slice(i, i + batchSize);
+      const batchStudents = studentsToUpload.slice(i, i + batchSize);
 
       batchStudents.forEach((student) => {
         try {
@@ -221,10 +265,10 @@ export const bulkUploadStudents = async (
     const message =
       failedCount === 0
         ? `Successfully uploaded ${uploadedCount} student(s)`
-        : `Uploaded ${uploadedCount} student(s), ${failedCount} failed`;
+        : `Uploaded ${uploadedCount} student(s), ${failedCount} skipped/failed`;
 
     return {
-      success: failedCount === 0,
+      success: uploadedCount > 0,
       message,
       uploaded: uploadedCount,
       failed: failedCount,
@@ -241,6 +285,54 @@ export const bulkUploadStudents = async (
       errors: [...errors, errorMessage],
     };
   }
+};
+
+/**
+ * Check which USNs already exist in Firestore
+ */
+export const checkExistingStudents = async (
+  usns: string[],
+): Promise<Set<string>> => {
+  const existingUSNs = new Set<string>();
+  if (!usns || usns.length === 0) return existingUSNs;
+
+  try {
+    // Standardize all USNs to look like USN_L01
+    const normalizedUSNs = usns.map((usn) => {
+      if (!usn) return "";
+      const baseUSN = usn.trim().replace(/(_L01|_P01)$/, "");
+      return baseUSN ? `${baseUSN}_L01` : "";
+    }).filter(Boolean);
+
+    // Run queries in chunks of 30 because of Firestore 'in' query limit
+    const chunkSize = 30;
+    const promises = [];
+
+    for (let i = 0; i < normalizedUSNs.length; i += chunkSize) {
+      const chunk = normalizedUSNs.slice(i, i + chunkSize);
+      const q = query(
+        collection(db, "students"),
+        where("usnNumber", "in", chunk),
+      );
+      promises.push(getDocs(q));
+    }
+
+    const snapshots = await Promise.all(promises);
+    snapshots.forEach((snap) => {
+      snap.forEach((doc) => {
+        const data = doc.data();
+        if (data.usnNumber) {
+          existingUSNs.add(data.usnNumber);
+        }
+        // Also add the doc ID just in case
+        existingUSNs.add(doc.id);
+      });
+    });
+  } catch (error) {
+    console.error("Error checking existing students:", error);
+  }
+
+  return existingUSNs;
 };
 
 /**
@@ -431,6 +523,87 @@ export const deleteStudentFromFirestore = async (
     return {
       success: false,
       message: `Error deleting student: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+};
+
+/**
+ * Bulk delete students from Firestore
+ */
+export const bulkDeleteStudents = async (
+  usns: string[],
+): Promise<{
+  success: boolean;
+  message: string;
+  deleted: number;
+  failed: number;
+  errors: string[];
+}> => {
+  const errors: string[] = [];
+  let deletedCount = 0;
+  let failedCount = 0;
+
+  try {
+    if (!usns || usns.length === 0) {
+      return {
+        success: false,
+        message: "No students to delete",
+        deleted: 0,
+        failed: 0,
+        errors: ["No valid USN list provided"],
+      };
+    }
+
+    const batchSize = 500;
+    const batches = [];
+
+    for (let i = 0; i < usns.length; i += batchSize) {
+      const batch = writeBatch(db);
+      const batchUsns = usns.slice(i, i + batchSize);
+
+      batchUsns.forEach((usn) => {
+        try {
+          if (!usn) return;
+          const baseUSN = usn.trim().replace(/(_L01|_P01)$/, "");
+          const usnWithSuffix = baseUSN ? `${baseUSN}_L01` : "";
+
+          const docRef = doc(db, "students", usnWithSuffix);
+          batch.delete(docRef);
+          deletedCount++;
+        } catch (error) {
+          errors.push(
+            `USN "${usn}": ${error instanceof Error ? error.message : "Unknown error"}`,
+          );
+          failedCount++;
+        }
+      });
+
+      batches.push(batch.commit());
+    }
+
+    await Promise.all(batches);
+
+    const message =
+      failedCount === 0
+        ? `Successfully deleted ${deletedCount} student(s)`
+        : `Deleted ${deletedCount} student(s), ${failedCount} failed`;
+
+    return {
+      success: deletedCount > 0,
+      message,
+      deleted: deletedCount,
+      failed: failedCount,
+      errors,
+    };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    return {
+      success: false,
+      message: `Error during bulk delete: ${errorMessage}`,
+      deleted: deletedCount,
+      failed: failedCount,
+      errors: [errorMessage],
     };
   }
 };

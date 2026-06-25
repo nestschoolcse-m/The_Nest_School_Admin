@@ -15,7 +15,7 @@ const nextConfig = {
   // Prevent Next from inferring the wrong workspace root (common on Windows if
   // there are other lockfiles elsewhere on disk).
   turbopack: {
-    root: __dirname,
+    root: path.resolve(__dirname, ".."),
   },
 }
 
