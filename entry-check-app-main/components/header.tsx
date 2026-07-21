@@ -1,13 +1,15 @@
 "use client"
 
-import { Bell, User } from "lucide-react"
+import { Bell, User, Menu } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { auth } from "@/lib/firebase-client"
 import { onAuthStateChanged, signOut } from "firebase/auth"
+import { useSidebar } from "@/contexts/sidebar-context"
 
 export function Header() {
+  const pathname = usePathname()
   const currentDate = new Date().toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "2-digit",
@@ -18,6 +20,7 @@ export function Header() {
   const [username, setUsername] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
   const router = useRouter()
+  const { setIsMobileOpen } = useSidebar()
 
   useEffect(() => {
     // Listen to Firebase Auth state
@@ -57,16 +60,31 @@ export function Header() {
   }
 
   return (
-    <header className="h-16 bg-gradient-to-r from-teal-400 to-teal-300 flex items-center justify-between px-6">
+    <header className="h-16 bg-white border-b border-nest-100 shadow-sm flex items-center justify-between px-4 md:px-6">
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => setIsMobileOpen(true)}
+          className="p-2 -ml-2 text-nest-600 hover:bg-nest-50 rounded-md md:hidden"
+          aria-label="Open menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <h1 className="text-xl font-bold text-nest-800 tracking-tight hidden sm:block">
+          {pathname === "/" ? "Admin Dashboard" : 
+           pathname === "/students" ? "Students Directory" : 
+           pathname === "/add-student" ? "Add Student" : 
+           pathname === "/reports" ? "Reports" : 
+           pathname === "/about" ? "About" : "Dashboard"}
+        </h1>
+      </div>
+      
       <div className="flex-1" />
       <div className="flex items-center gap-4">
-        <span className="text-white font-medium">{currentDate}</span>
-        
 
         <div className="relative" ref={ref}>
           <button
             onClick={() => setOpen((v) => !v)}
-            className="p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+            className="p-2 text-nest-600 hover:bg-nest-50 rounded-full transition-colors"
             aria-label="User menu"
           >
             <User className="w-5 h-5" />

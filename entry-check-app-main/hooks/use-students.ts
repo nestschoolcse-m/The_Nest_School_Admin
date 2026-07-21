@@ -1,195 +1,92 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  QueryConstraint,
-  Timestamp,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase-client";
+import { useMemo } from "react";
+import { useStudentsContext, CachedStudent } from "@/contexts/students-context";
 
-export interface FirebaseStudent {
-  usn: string;
-  name: string;
-  dob: string;
-  grade: string;
-  section?: string;
-  fatherName: string;
-  fatherMobile: number;
-  motherName: string;
-  motherMobile: number;
-  createdAt: Timestamp | null;
-}
+// Re-export the student type for backwards compatibility
+export type { CachedStudent };
 
-export interface Student extends FirebaseStudent {
+export interface Student {
   id: string;
+  usn: string;
   usnNumber: string;
+  name: string;
+  grade: string;
 }
 
-// Hook to fetch all students
+/**
+ * Hook to fetch all students — backed by StudentsContext cache.
+ * No Firestore reads are performed; data comes from the global cache.
+ */
 export const useStudents = () => {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { students, loading, error } = useStudentsContext();
 
-  useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        setLoading(true);
+  const mappedStudents: Student[] = useMemo(
+    () =>
+      students.map((s) => ({
+        id: s.id,
+        usn: s.usn,
+        usnNumber: s.usnNumber,
+        name: s.name,
+        grade: s.grade,
+      })),
+    [students],
+  );
 
-        const studentsCollection = collection(db, "students");
-        const snapshot = await getDocs(studentsCollection);
-
-
-        const studentsList: Student[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data() as FirebaseStudent;
-          const section = data.section && data.section !== "nil" && data.section !== "N/A" && data.section !== "NILL" ? data.section : "";
-          const fullGrade = section ? `${data.grade} ${section}` : data.grade;
-
-          studentsList.push({
-            ...data,
-            id: doc.id,
-            usn: doc.id,
-            usnNumber: doc.id,
-            grade: fullGrade,
-          });
-        });
-
-        setStudents(studentsList);
-        setError(null);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to fetch students"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStudents();
-  }, []);
-
-  return { students, loading, error };
+  return { students: mappedStudents, loading, error };
 };
 
-// Hook to fetch students by grade
+/**
+ * Hook to fetch students by grade — filters cached data, no Firestore reads.
+ */
 export const useStudentsByGrade = (grade: string) => {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { students, loading, error } = useStudentsContext();
 
-  useEffect(() => {
-    if (!grade) {
-      setStudents([]);
-      setLoading(false);
-      return;
-    }
+  const filtered: Student[] = useMemo(() => {
+    if (!grade) return [];
+    return students
+      .filter((s) => s.grade === grade)
+      .map((s) => ({
+        id: s.id,
+        usn: s.usn,
+        usnNumber: s.usnNumber,
+        name: s.name,
+        grade: s.grade,
+      }));
+  }, [students, grade]);
 
-    const fetchStudents = async () => {
-      try {
-        setLoading(true);
-        const studentsCollection = collection(db, "students");
-        const q = query(studentsCollection, where("grade", "==", grade));
-        const snapshot = await getDocs(q);
-
-        const studentsList: Student[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data() as FirebaseStudent;
-          const section = data.section && data.section !== "nil" && data.section !== "N/A" && data.section !== "NILL" ? data.section : "";
-          const fullGrade = section ? `${data.grade} ${section}` : data.grade;
-
-          studentsList.push({
-            ...data,
-            id: doc.id,
-            usn: doc.id,
-            usnNumber: doc.id,
-            grade: fullGrade,
-          });
-        });
-
-        setStudents(studentsList);
-        setError(null);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to fetch students"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStudents();
-  }, [grade]);
-
-  return { students, loading, error };
+  return { students: filtered, loading, error };
 };
 
-// Hook to fetch students with filters
+/**
+ * Hook to fetch students with filters — filters cached data, no Firestore reads.
+ */
 export const useStudentsWithFilters = (filters?: {
   grade?: string;
   name?: string;
 }) => {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { students, loading, error } = useStudentsContext();
 
-  useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        setLoading(true);
-        const studentsCollection = collection(db, "students");
-        const constraints: QueryConstraint[] = [];
+  const filtered: Student[] = useMemo(() => {
+    let result = students.map((s) => ({
+      id: s.id,
+      usn: s.usn,
+      usnNumber: s.usnNumber,
+      name: s.name,
+      grade: s.grade,
+    }));
 
-        if (filters?.grade) {
-          constraints.push(where("grade", "==", filters.grade));
-        }
+    if (filters?.grade) {
+      result = result.filter((s) => s.grade === filters.grade);
+    }
+    if (filters?.name) {
+      result = result.filter((s) =>
+        s.name.toLowerCase().includes(filters.name!.toLowerCase()),
+      );
+    }
 
-        const q =
-          constraints.length > 0
-            ? query(studentsCollection, ...constraints)
-            : query(studentsCollection);
-        const snapshot = await getDocs(q);
+    return result;
+  }, [students, filters?.grade, filters?.name]);
 
-        let studentsList: Student[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data() as FirebaseStudent;
-          const section = data.section && data.section !== "nil" && data.section !== "N/A" && data.section !== "NILL" ? data.section : "";
-          const fullGrade = section ? `${data.grade} ${section}` : data.grade;
-
-          studentsList.push({
-            ...data,
-            id: doc.id,
-            usn: doc.id,
-            usnNumber: doc.id,
-            grade: fullGrade,
-          });
-        });
-
-        // Client-side name filtering
-        if (filters?.name) {
-          studentsList = studentsList.filter((student) =>
-            student.name.toLowerCase().includes(filters.name!.toLowerCase())
-          );
-        }
-
-        setStudents(studentsList);
-        setError(null);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to fetch students"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStudents();
-  }, [filters?.grade, filters?.name]);
-
-  return { students, loading, error };
+  return { students: filtered, loading, error };
 };

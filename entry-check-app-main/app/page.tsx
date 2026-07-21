@@ -35,9 +35,5 @@ export default function Page() {
     </div>
   );
 
-  return (
-    <DateProvider>
-      <DashboardContent />
-    </DateProvider>
-  );
+  return <DashboardContent />;
 }

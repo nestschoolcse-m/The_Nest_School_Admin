@@ -1,43 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import { useStudents } from "@/hooks/use-students";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-interface StudentTableProps {
-  showTodayTransport?: boolean;
-  compact?: boolean;
-}
-
-export function StudentTable({
-  showTodayTransport = false,
-  compact = false,
-}: StudentTableProps) {
+export function StudentTable() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGrade, setSelectedGrade] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
   const { students, loading, error } = useStudents();
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedGrade]);
 
   // Grade ordering for sorting
   const gradeOrder = [
-    "PREKG",
+    "EYP",
+    "PRE KG",
     "LKG",
     "UKG",
-    "G1",
-    "G2",
-    "G3",
-    "G4",
-    "G5",
-    "G6",
-    "G7",
-    "G8",
-    "G9",
-    "G10",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
   ];
 
   const getGradeScore = (grade: string) => {
-    const baseGrade = grade.split(" ")[0].replace("-", "");
+    // Extract base grade (e.g. "PRE KG" from "PRE KG A", "10" from "10A")
+    const match = grade.match(/^(PRE KG|PRE-KG|PREKG|LKG|UKG|EYP|G?\d+)/i);
+    if (!match) return 999;
+
+    // Normalize (e.g. "G10" -> "10", "PREKG" -> "PRE KG")
+    let baseGrade = match[1].toUpperCase();
+    if (baseGrade.startsWith("G") && baseGrade.length > 1 && !isNaN(Number(baseGrade[1]))) {
+      baseGrade = baseGrade.substring(1); // Remove the 'G' prefix from 'G1', 'G10', etc.
+    }
+    if (baseGrade === "PREKG" || baseGrade === "PRE-KG") baseGrade = "PRE KG";
+
     const index = gradeOrder.indexOf(baseGrade);
     return index === -1 ? 999 : index;
   };
@@ -79,58 +98,59 @@ export function StudentTable({
     return a.localeCompare(b);
   });
 
+  const totalPages = Math.ceil(filteredStudents.length / itemsPerPage) || 1;
+  const paginatedStudents = filteredStudents.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   return (
     <div className="space-y-4">
       {/* Grade Filter Bar */}
-      {!loading && !error && !compact && (
-        <div className="bg-white p-2 rounded-xl border border-gray-100 shadow-sm overflow-x-auto whitespace-nowrap scrollbar-hide">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSelectedGrade("All")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                selectedGrade === "All"
-                  ? "bg-teal-600 text-white shadow-md"
-                  : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              All Students
-            </button>
-            <div className="w-px h-8 bg-gray-200 self-center mx-1" />
-            {availableGrades.map((grade) => (
-              <button
-                key={grade}
-                onClick={() => setSelectedGrade(grade)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  selectedGrade === grade
-                    ? "bg-teal-600 text-white shadow-md"
-                    : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                }`}
-              >
-                {grade}
-              </button>
-            ))}
+      {!loading && !error && (
+        <div className="flex items-center gap-3">
+          <label htmlFor="grade-filter" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+            Filter by Grade:
+          </label>
+          <div className="w-full md:w-64">
+            <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+              <SelectTrigger id="grade-filter" className="bg-white">
+                <SelectValue placeholder="Select Grade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Students</SelectItem>
+                {availableGrades.map((grade) => (
+                  <SelectItem key={grade} value={grade}>
+                    {grade}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h3 className="text-teal-600 font-semibold italic">
-            {showTodayTransport ? "Tabular Column" : "STUDENTS DETAILS"}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden w-full">
+        <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <h3 className="text-nest-600 font-semibold italic whitespace-nowrap">
+            STUDENTS DETAILS{" "}
             {selectedGrade !== "All" && (
-              <span className="ml-2 text-gray-400 font-normal not-italic text-sm">
+              <span className="text-gray-400 text-sm font-normal">
                 ({selectedGrade})
               </span>
             )}
           </h3>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <div className="relative w-full md:w-auto">
+            <Search
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              size={16}
+            />
             <Input
               type="text"
               placeholder="Search by name or USN..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 w-full md:w-64 border-teal-300 focus:border-teal-500 rounded-lg"
+              className="pl-10 w-full md:w-64 border-nest-300 focus:border-nest-500 rounded-lg"
             />
           </div>
         </div>
@@ -152,92 +172,50 @@ export function StudentTable({
           )}
 
           {!loading && !error && (
-            <table className="w-full">
+            <table className="w-full table-fixed min-w-[600px]">
               <thead className="bg-gray-50/50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 w-[10%] text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     S.NO
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 w-[20%] text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    USN
+                  </th>
+                  <th className="px-4 py-3 w-[45%] text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     NAME
                   </th>
-                  {!compact && (
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      USN NUMBER
-                    </th>
-                  )}
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 w-[25%] text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     GRADE
                   </th>
-                  {!compact && !showTodayTransport && (
-                    <>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        DATE OF BIRTH
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        FATHER NAME
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        FATHER MOBILE
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        MOTHER NAME
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        MOTHER MOBILE
-                      </th>
-                    </>
-                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredStudents.length > 0 ? (
-                  filteredStudents.map((student, index) => (
+                {paginatedStudents.length > 0 ? (
+                  paginatedStudents.map((student, index) => (
                     <tr
                       key={student.id}
-                      className="hover:bg-teal-50/30 transition-colors"
+                      className="hover:bg-nest-50/30 transition-colors"
                     >
                       <td className="px-4 py-3 text-sm font-medium text-gray-500">
-                        {index + 1}
+                        {(currentPage - 1) * itemsPerPage + index + 1}
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                      <td className="px-4 py-3 text-sm text-gray-600 font-mono">
+                        {student.usnNumber}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900 truncate max-w-[280px]">
                         {student.name}
                       </td>
-                      {!compact && (
-                        <td className="px-4 py-3 text-sm text-gray-600 font-mono">
-                          {student.usnNumber}
-                        </td>
-                      )}
                       <td className="px-4 py-3 text-sm text-gray-600">
                         <span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium">
                           {student.grade}
                         </span>
                       </td>
-                      {!compact && !showTodayTransport && (
-                        <>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {student.dob}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {student.fatherName}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {student.fatherMobile || "N/A"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {student.motherName}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {student.motherMobile || "N/A"}
-                          </td>
-                        </>
-                      )}
                     </tr>
                   ))
                 ) : (
                   <tr>
                     <td
-                      colSpan={compact ? 4 : 9}
+                      colSpan={4}
                       className="px-4 py-12 text-center text-gray-500 italic"
                     >
                       No students found matching your criteria
@@ -246,6 +224,34 @@ export function StudentTable({
                 )}
               </tbody>
             </table>
+          )}
+          
+          {/* Pagination Controls */}
+          {!loading && !error && filteredStudents.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50/50 gap-4">
+              <div className="text-sm text-gray-500">
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredStudents.length)} of {filteredStudents.length} entries
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 rounded border border-gray-200 bg-white text-sm disabled:opacity-50 hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  Previous
+                </button>
+                <div className="text-sm font-medium text-gray-700 px-2">
+                  Page {currentPage} of {totalPages}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 rounded border border-gray-200 bg-white text-sm disabled:opacity-50 hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

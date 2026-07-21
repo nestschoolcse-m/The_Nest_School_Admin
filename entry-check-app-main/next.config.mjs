@@ -12,6 +12,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ["jspdf", "canvg", "jspdf-autotable"],
   // Prevent Next from inferring the wrong workspace root (common on Windows if
   // there are other lockfiles elsewhere on disk).
   turbopack: {

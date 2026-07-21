@@ -1,52 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Trophy } from "lucide-react";
-import { getGradeWiseAttendance } from "@/lib/firestore-service";
+import { useDashboardData } from "@/contexts/dashboard-data-context";
 import { useDate } from "@/contexts/date-context";
-
-interface GradeAttendanceData {
-  grade: string;
-  strength: number;
-  present: number;
-}
+import { useRouter } from "next/navigation";
 
 export function GradeAttendance() {
-  const { selectedDate, isToday } = useDate();
-  const [gradeAttendance, setGradeAttendance] = useState<GradeAttendanceData[]>(
-    [],
-  );
-  const [loading, setLoading] = useState(true);
-
-  const fetchGradeAttendance = async () => {
-    try {
-      setLoading(true);
-      const data = await getGradeWiseAttendance(selectedDate);
-      setGradeAttendance(data);
-    } catch (error) {
-      // Silent error
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch when component mounts or selected date changes
-  useEffect(() => {
-    fetchGradeAttendance();
-  }, [selectedDate]);
-
-  // Only auto-refresh if viewing today's data
-  useEffect(() => {
-    if (!isToday) return;
-
-    const interval = setInterval(fetchGradeAttendance, 300000); // 5 minutes refresh
-    return () => clearInterval(interval);
-  }, [isToday, selectedDate]);
+  const { selectedDate } = useDate();
+  const { gradeAttendance, loading } = useDashboardData();
+  const router = useRouter();
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-teal-600 font-bold text-lg mb-1">
+      <div className="bg-white rounded-2xl p-6 shadow-sm ring-1 ring-nest-100">
+        <h3 className="text-nest-700 font-bold text-lg mb-1 tracking-wide">
           GRADE-WISE ATTENDANCE
         </h3>
         <p className="text-gray-500 text-sm mb-4">
@@ -70,8 +37,8 @@ export function GradeAttendance() {
   }
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-teal-600 font-bold text-lg mb-1">
+    <div className="bg-white rounded-2xl p-6 shadow-sm ring-1 ring-nest-100">
+      <h3 className="text-nest-700 font-bold text-lg mb-1 tracking-wide">
         GRADE-WISE ATTENDANCE
       </h3>
       <p className="text-gray-500 text-sm mb-4">
@@ -81,7 +48,7 @@ export function GradeAttendance() {
           year: "numeric",
         })}
       </p>
-      <div className="space-y-3 max-h-[400px] overflow-y-auto">
+      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
         {gradeAttendance.length === 0 ? (
           <p className="text-gray-500 text-sm text-center py-4">
             No students found
@@ -96,25 +63,26 @@ export function GradeAttendance() {
             return (
               <div
                 key={item.grade}
-                className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors"
+                onClick={() => router.push(`/logs?grade=${item.grade}`)}
+                className="flex items-center gap-3 p-2 hover:bg-nest-50 rounded-xl transition-all cursor-pointer group"
               >
                 <span className="text-xs font-medium text-gray-400 w-4">
                   {index + 1}.
                 </span>
-                <Trophy className="w-5 h-5 text-gray-400" />
-                <span className="font-medium text-gray-700 w-20">
+                <Trophy className="w-5 h-5 text-gray-400 group-hover:text-nest-500 transition-colors" />
+                <span className="font-semibold text-gray-700 w-20 group-hover:text-nest-700 transition-colors">
                   {item.grade}
                 </span>
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-teal-500 text-sm font-medium">
+                    <span className="text-nest-600 text-sm font-semibold">
                       {item.present}/{item.strength}
                     </span>
-                    <span className="text-xs text-gray-500">{percentage}%</span>
+                    <span className="text-xs font-medium text-gray-500">{percentage}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div className="w-full bg-nest-100 rounded-full h-2">
                     <div
-                      className="bg-teal-500 h-1.5 rounded-full transition-all duration-300"
+                      className="bg-nest-500 h-2 rounded-full transition-all duration-500 shadow-sm"
                       style={{ width: `${percentage}%` }}
                     />
                   </div>

@@ -14,52 +14,44 @@ import {
   query,
   where,
   DocumentSnapshot,
-  getCountFromServer,
 } from "firebase/firestore";
 import { db } from "./firebase-client";
-import { dashboardStats } from "./data";
-import { normalizeGrade, parseGradeSection } from "./file-parser";
+import { normalizeGrade } from "./file-parser";
 
-// Interface for form data (includes fields not in database)
+// Interface for form data
 export interface AddStudentFormData {
   studentName: string;
-  admissionNumber: string;
   grade: string;
-  section: string;
-  gender: string;
   usnNumber: string;
-  modeOfTransport: string;
-  parentCardNumber: string;
-  fatherName: string;
-  fatherMobile: string;
-  motherName: string;
-  motherMobile: string;
-  dob: string;
-  id?: string; // Add this to track the exact document ID for updates/deletes
+  id?: string;
+  segment?: string;
 }
 
-// Interface for Firestore document (only fields that exist in DB)
+// Interface for Firestore document
 export interface FirestoreStudent {
   name: string;
   grade: string;
-  section: string;
-  admissionNumber: string;
-  dob: string;
-  fatherName: string;
-  fatherMobile: number;
-  motherName: string;
-  motherMobile: number;
-  parentusn: string;
-  gender: string;
-  modeOfTransport: string;
+  segment: string;
   createdAt: Timestamp;
-  usnNumber?: string; // Add this field
-  usn?: string;      // Add this field for compatibility
+  usnNumber?: string;
+  usn?: string;
 }
 
 /**
+ * Automatically determine the segment based on the grade
+ */
+export const calculateSegment = (grade: string): string => {
+  const g = grade.toUpperCase();
+  if (["PREKG", "LKG", "UKG"].includes(g)) return "EYP";
+  if (["G1", "G2", "G3", "G4", "G5"].includes(g)) return "PYP";
+  if (["G6", "G7", "G8"].includes(g)) return "CIE LS";
+  if (["G9", "G10"].includes(g)) return "CIE US";
+  if (["G11", "G12"].includes(g)) return "CIE SS";
+  return "Unknown";
+};
+
+/**
  * Add a new student to Firestore
- * Maps form fields to database fields
  */
 export const addStudentToFirestore = async (
   formData: AddStudentFormData,
@@ -67,28 +59,12 @@ export const addStudentToFirestore = async (
   try {
     const studentBase = formData.usnNumber ? formData.usnNumber.replace(/(_L01|_P01)$/, "") : "";
     const usnWithSuffix = studentBase ? `${studentBase}_L01` : "";
-
-    // Use parentCardNumber if provided, otherwise fallback to student USN
-    const parentBase = (formData.parentCardNumber || studentBase || "").replace(/(_L01|_P01)$/, "");
-    const parentUSN = parentBase ? `${parentBase}_P01` : "";
+    const normalizedGrade = normalizeGrade(formData.grade) || formData.grade;
 
     const firestoreData: FirestoreStudent = {
       name: toTitleCase(formData.studentName),
-      grade: normalizeGrade(formData.grade) || formData.grade,
-      section: formData.section || "nil",
-      admissionNumber: formData.admissionNumber || "N/A",
-      dob: formData.dob || "N/A",
-      fatherName: toTitleCase(formData.fatherName || "N/A"),
-      fatherMobile: formData.fatherMobile
-        ? parseInt(String(formData.fatherMobile)) || 0
-        : 0,
-      motherName: toTitleCase(formData.motherName || "N/A"),
-      motherMobile: formData.motherMobile
-        ? parseInt(String(formData.motherMobile)) || 0
-        : 0,
-      parentusn: parentUSN,
-      gender: formData.gender || "Male",
-      modeOfTransport: formData.modeOfTransport || "parent",
+      grade: normalizedGrade,
+      segment: calculateSegment(normalizedGrade),
       createdAt: serverTimestamp() as Timestamp,
       usnNumber: usnWithSuffix,
       usn: usnWithSuffix,
@@ -119,27 +95,17 @@ export const addStudentToFirestore = async (
   }
 };
 
-/**
- * Bulk upload students to Firestore using batch writes
- */
 export interface BulkUploadStudent {
   name: string | null;
   grade: string | null;
-  section: string | null;
-  admissionNumber: string | null;
   usn: string | null;
-  dob: string | null;
-  fatherName: string | null;
-  motherName: string | null;
-  fatherMobile: string | null;
-  motherMobile: string | null;
-  modeOfTransport: string | null;
-  gender: string | null;
+  segment: string | null;
 }
 
 export const bulkUploadStudents = async (
   students: BulkUploadStudent[],
   preventDuplicates = true,
+  cachedStudents?: Array<{ usn: string; usnNumber: string; id: string }>,
 ): Promise<{
   success: boolean;
   message: string;
@@ -162,10 +128,9 @@ export const bulkUploadStudents = async (
       };
     }
 
-    // 1. Deduplicate students within the input file list itself (first occurrence wins)
     const seenLocalUSNs = new Set<string>();
     const fileUniqueStudents = students.filter((s) => {
-      if (!s.usn) return true; // Let validation fail it below
+      if (!s.usn) return true;
       const baseUSN = s.usn.trim().replace(/(_L01|_P01)$/, "");
       const usnWithSuffix = baseUSN ? `${baseUSN}_L01` : "";
       if (seenLocalUSNs.has(usnWithSuffix)) {
@@ -177,12 +142,10 @@ export const bulkUploadStudents = async (
       return true;
     });
 
-    // 2. Fetch existing students in Firestore if preventDuplicates is enabled
     const existingUSNs = preventDuplicates
-      ? await checkExistingStudents(fileUniqueStudents.map((s) => s.usn).filter(Boolean) as string[])
+      ? await checkExistingStudents(fileUniqueStudents.map((s) => s.usn).filter(Boolean) as string[], cachedStudents)
       : new Set<string>();
 
-    // 3. Filter out students that already exist in Firestore
     const studentsToUpload = fileUniqueStudents.filter((s) => {
       if (!s.usn) return true;
       const baseUSN = s.usn.trim().replace(/(_L01|_P01)$/, "");
@@ -222,25 +185,12 @@ export const bulkUploadStudents = async (
 
           const baseUSN = student.usn ? student.usn.replace(/(_L01|_P01)$/, "") : "";
           const usnWithSuffix = baseUSN ? `${baseUSN}_L01` : "";
-          const parentUSN = baseUSN ? `${baseUSN}_P01` : "";
-
+          const normalizedGrade = normalizeGrade(student.grade) || student.grade || "N/A";
+          
           const firestoreData: FirestoreStudent = {
             name: toTitleCase(student.name || "N/A"),
-            grade: student.grade || "N/A",
-            section: student.section || "nil",
-            admissionNumber: student.admissionNumber || "N/A",
-            dob: student.dob || "N/A",
-            fatherName: toTitleCase(student.fatherName || "N/A"),
-            fatherMobile: student.fatherMobile
-              ? parseInt(String(student.fatherMobile)) || 0
-              : 0,
-            motherName: toTitleCase(student.motherName || "N/A"),
-            motherMobile: student.motherMobile
-              ? parseInt(String(student.motherMobile)) || 0
-              : 0,
-            parentusn: parentUSN,
-            gender: student.gender || "Male",
-            modeOfTransport: student.modeOfTransport || "parent",
+            grade: normalizedGrade,
+            segment: student.segment && student.segment.length > 0 ? student.segment : calculateSegment(normalizedGrade),
             createdAt: serverTimestamp() as Timestamp,
             usnNumber: usnWithSuffix,
             usn: usnWithSuffix,
@@ -287,29 +237,43 @@ export const bulkUploadStudents = async (
   }
 };
 
-/**
- * Check which USNs already exist in Firestore
- */
 export const checkExistingStudents = async (
   usns: string[],
+  cachedStudents?: Array<{ usn: string; usnNumber: string; id: string }>,
 ): Promise<Set<string>> => {
   const existingUSNs = new Set<string>();
   if (!usns || usns.length === 0) return existingUSNs;
 
   try {
-    // Standardize all USNs to look like USN_L01
     const normalizedUSNs = usns.map((usn) => {
       if (!usn) return "";
       const baseUSN = usn.trim().replace(/(_L01|_P01)$/, "");
       return baseUSN ? `${baseUSN}_L01` : "";
     }).filter(Boolean);
 
-    // Run queries in chunks of 30 because of Firestore 'in' query limit
+    // Bonus fix: Check cached students first to reduce Firestore queries
+    let usnToQuery = normalizedUSNs;
+    if (cachedStudents) {
+      const cachedUSNSet = new Set(
+        cachedStudents.flatMap((s) => [s.usnNumber, s.usn, s.id].filter(Boolean))
+      );
+      usnToQuery = [];
+      normalizedUSNs.forEach((usn) => {
+        if (cachedUSNSet.has(usn)) {
+          existingUSNs.add(usn);
+        } else {
+          usnToQuery.push(usn);
+        }
+      });
+    }
+
+    if (usnToQuery.length === 0) return existingUSNs;
+
     const chunkSize = 30;
     const promises = [];
 
-    for (let i = 0; i < normalizedUSNs.length; i += chunkSize) {
-      const chunk = normalizedUSNs.slice(i, i + chunkSize);
+    for (let i = 0; i < usnToQuery.length; i += chunkSize) {
+      const chunk = usnToQuery.slice(i, i + chunkSize);
       const q = query(
         collection(db, "students"),
         where("usnNumber", "in", chunk),
@@ -324,7 +288,6 @@ export const checkExistingStudents = async (
         if (data.usnNumber) {
           existingUSNs.add(data.usnNumber);
         }
-        // Also add the doc ID just in case
         existingUSNs.add(doc.id);
       });
     });
@@ -335,11 +298,9 @@ export const checkExistingStudents = async (
   return existingUSNs;
 };
 
-/**
- * Fetch a student by USN
- */
 export const getStudentByUSN = async (
   usn: string,
+  cachedStudents?: Array<{ id: string; usn: string; usnNumber: string; name: string; grade: string }>,
 ): Promise<{
   success: boolean;
   data?: AddStudentFormData;
@@ -347,18 +308,47 @@ export const getStudentByUSN = async (
 }> => {
   try {
     const normalizedUsn = usn.trim();
-    // Strategy 1: Try with suffix (Standard)
     const usnWithSuffix = normalizedUsn.includes("_L01") ? normalizedUsn : `${normalizedUsn}_L01`;
+
+    // Fix 3: Check cached students first to avoid Firestore reads
+    if (cachedStudents) {
+      const cached = cachedStudents.find(
+        (s) =>
+          s.usnNumber === usnWithSuffix ||
+          s.usnNumber === normalizedUsn ||
+          s.usn === usnWithSuffix ||
+          s.usn === normalizedUsn ||
+          s.id === usnWithSuffix ||
+          s.id === normalizedUsn ||
+          s.name.toLowerCase() === normalizedUsn.toLowerCase()
+      );
+
+      if (cached) {
+        const normalizedGrade = normalizeGrade(cached.grade) || cached.grade || "PREKG";
+        const foundUsn = cached.usnNumber || cached.usn || cached.id.replace("_L01", "").replace("_P01", "");
+        return {
+          success: true,
+          data: {
+            studentName: cached.name || "",
+            grade: normalizedGrade,
+            segment: calculateSegment(normalizedGrade),
+            usnNumber: foundUsn,
+            id: cached.id,
+          },
+          message: "Student found (from cache)",
+        };
+      }
+    }
+
+    // Firestore fallback — only runs on cache miss
     let docRef = doc(db, "students", usnWithSuffix);
     let docSnap = await getDoc(docRef);
 
-    // Strategy 2: If not found, try raw USN as ID (Legacy/Other)
     if (!docSnap.exists()) {
       docRef = doc(db, "students", normalizedUsn);
       docSnap = await getDoc(docRef);
     }
 
-    // Strategy 3: Query by usnNumber field
     if (!docSnap.exists()) {
       const q = query(
         collection(db, "students"),
@@ -370,7 +360,6 @@ export const getStudentByUSN = async (
       }
     }
 
-    // Strategy 4: Query by usn field (Alternative field name)
     if (!docSnap.exists()) {
       const q = query(collection(db, "students"), where("usn", "==", normalizedUsn));
       const querySnap = await getDocs(q);
@@ -379,34 +368,27 @@ export const getStudentByUSN = async (
       }
     }
 
+    if (!docSnap.exists()) {
+      const titleCaseName = toTitleCase(normalizedUsn);
+      const q = query(collection(db, "students"), where("name", "==", titleCaseName));
+      const querySnap = await getDocs(q);
+      if (!querySnap.empty) {
+        docSnap = querySnap.docs[0] as unknown as DocumentSnapshot;
+      }
+    }
+
     if (docSnap.exists()) {
       const data = docSnap.data();
-      // Determine the USN from ID or data
       const id = docSnap.id;
-      const foundUsn =
-        data.usnNumber || data.usn || id.replace("_L01", "").replace("_P01", "");
-
-      const gradeInfo = parseGradeSection(data.grade);
-      const finalGrade = gradeInfo.grade || "PREKG";
-      const finalSection = data.section && data.section !== "nil" ? data.section : gradeInfo.section;
+      const foundUsn = data.usnNumber || data.usn || id.replace("_L01", "").replace("_P01", "");
+      const normalizedGrade = normalizeGrade(data.grade) || data.grade || "PREKG";
 
       const formData: AddStudentFormData = {
         studentName: data.name || "",
-        admissionNumber: data.admissionNumber || "",
-        grade: finalGrade,
-        section: finalSection,
-        gender: data.gender || "Male",
+        grade: normalizedGrade,
+        segment: data.segment || calculateSegment(normalizedGrade),
         usnNumber: foundUsn,
-        id: id, // Store the actual ID
-        modeOfTransport: data.modeOfTransport || "parent",
-        parentCardNumber: data.parentusn
-          ? data.parentusn.replace("_P01", "")
-          : "",
-        fatherName: data.fatherName === "N/A" ? "" : data.fatherName,
-        fatherMobile: data.fatherMobile ? String(data.fatherMobile) : "",
-        motherName: data.motherName === "N/A" ? "" : data.motherName,
-        motherMobile: data.motherMobile ? String(data.motherMobile) : "",
-        dob: data.dob === "N/A" ? "" : data.dob,
+        id: id,
       };
 
       return {
@@ -428,58 +410,30 @@ export const getStudentByUSN = async (
   }
 };
 
-/**
- * Update an existing student in Firestore
- */
 export const updateStudentInFirestore = async (
-  docId: string, // Use actual document ID
+  docId: string,
   formData: AddStudentFormData,
 ): Promise<{ success: boolean; message: string }> => {
   try {
     const newUsn = formData.usnNumber;
-    // Check if USN itself changed, we might want to rename the document ID
-    // but often it's better to stick with the original ID unless USN is the ID
-    const isUsnChanged = docId !== newUsn && !docId.startsWith(newUsn);
-
-    // If docId is already a proper suffix ID, and newUsn is just the base, 
-    // it's not really a "change" in current logic, just an update.
-    // However, if the user explicitly changes the USN field to something else:
     const baseNewUsn = newUsn.replace(/(_L01|_P01)$/, "");
     const baseOldId = docId.replace(/(_L01|_P01)$/, "");
     const reallyChanged = baseNewUsn !== baseOldId;
 
     const newDocId = `${baseNewUsn}_L01`;
-
-    // Use parentCardNumber if provided, otherwise fallback to student USN
-    const parentBase = (formData.parentCardNumber || baseNewUsn || "").replace(/(_L01|_P01)$/, "");
-    const parentUSN = parentBase ? `${parentBase}_P01` : "";
+    const normalizedGrade = normalizeGrade(formData.grade) || formData.grade;
 
     const firestoreData: FirestoreStudent = {
       name: toTitleCase(formData.studentName),
-      grade: normalizeGrade(formData.grade) || formData.grade,
-      section: formData.section || "nil",
-      admissionNumber: formData.admissionNumber || "N/A",
-      dob: formData.dob || "N/A",
-      fatherName: toTitleCase(formData.fatherName || "N/A"),
-      fatherMobile: formData.fatherMobile
-        ? parseInt(String(formData.fatherMobile)) || 0
-        : 0,
-      motherName: toTitleCase(formData.motherName || "N/A"),
-      motherMobile: formData.motherMobile
-        ? parseInt(String(formData.motherMobile)) || 0
-        : 0,
-      parentusn: parentUSN,
-      gender: formData.gender || "Male",
-      modeOfTransport: formData.modeOfTransport || "parent",
+      grade: normalizedGrade,
+      segment: calculateSegment(normalizedGrade),
       createdAt: serverTimestamp() as Timestamp,
       usnNumber: newDocId,
       usn: newDocId,
     };
 
     if (reallyChanged) {
-      // Create new document with new ID
       await setDoc(doc(db, "students", newDocId), firestoreData);
-      // Delete old document
       await deleteDoc(doc(db, "students", docId));
 
       return {
@@ -487,11 +441,7 @@ export const updateStudentInFirestore = async (
         message: `Student updated and USN changed to ${newUsn}!`,
       };
     } else {
-      // Update existing document using its real ID
-      await setDoc(doc(db, "students", docId), firestoreData, {
-        merge: true,
-      });
-
+      await setDoc(doc(db, "students", docId), firestoreData, { merge: true });
       return {
         success: true,
         message: `Student ${formData.studentName} updated successfully!`,
@@ -505,16 +455,11 @@ export const updateStudentInFirestore = async (
   }
 };
 
-/**
- * Delete a student from Firestore
- */
 export const deleteStudentFromFirestore = async (
   docId: string,
 ): Promise<{ success: boolean; message: string }> => {
   try {
-    // Directly delete using the known document ID
     await deleteDoc(doc(db, "students", docId));
-
     return {
       success: true,
       message: `Student deleted successfully!`,
@@ -527,276 +472,6 @@ export const deleteStudentFromFirestore = async (
   }
 };
 
-/**
- * Bulk delete students from Firestore
- */
-export const bulkDeleteStudents = async (
-  usns: string[],
-): Promise<{
-  success: boolean;
-  message: string;
-  deleted: number;
-  failed: number;
-  errors: string[];
-}> => {
-  const errors: string[] = [];
-  let deletedCount = 0;
-  let failedCount = 0;
-
-  try {
-    if (!usns || usns.length === 0) {
-      return {
-        success: false,
-        message: "No students to delete",
-        deleted: 0,
-        failed: 0,
-        errors: ["No valid USN list provided"],
-      };
-    }
-
-    const batchSize = 500;
-    const batches = [];
-
-    for (let i = 0; i < usns.length; i += batchSize) {
-      const batch = writeBatch(db);
-      const batchUsns = usns.slice(i, i + batchSize);
-
-      batchUsns.forEach((usn) => {
-        try {
-          if (!usn) return;
-          const baseUSN = usn.trim().replace(/(_L01|_P01)$/, "");
-          const usnWithSuffix = baseUSN ? `${baseUSN}_L01` : "";
-
-          const docRef = doc(db, "students", usnWithSuffix);
-          batch.delete(docRef);
-          deletedCount++;
-        } catch (error) {
-          errors.push(
-            `USN "${usn}": ${error instanceof Error ? error.message : "Unknown error"}`,
-          );
-          failedCount++;
-        }
-      });
-
-      batches.push(batch.commit());
-    }
-
-    await Promise.all(batches);
-
-    const message =
-      failedCount === 0
-        ? `Successfully deleted ${deletedCount} student(s)`
-        : `Deleted ${deletedCount} student(s), ${failedCount} failed`;
-
-    return {
-      success: deletedCount > 0,
-      message,
-      deleted: deletedCount,
-      failed: failedCount,
-      errors,
-    };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    return {
-      success: false,
-      message: `Error during bulk delete: ${errorMessage}`,
-      deleted: deletedCount,
-      failed: failedCount,
-      errors: [errorMessage],
-    };
-  }
-};
-
-/**
- * Fetch dashboard metrics from Firestore
- * Entry/Exit counts reset daily at midnight
- * @param targetDate - Optional date to fetch metrics for (defaults to today)
- */
-export const getDashboardMetrics = async (targetDate?: Date) => {
-  try {
-    const studentsCollection = collection(db, "students");
-    const studentsCountSnap = await getCountFromServer(studentsCollection);
-    const totalStudents = studentsCountSnap.data().count;
-
-    // Use provided date or default to today
-    const queryDate = targetDate || new Date();
-    const startOfDay = new Date(queryDate);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(queryDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // Fetch ONLY documents from the selected date range
-    const logsCollection = collection(db, "attendance_logs");
-    const q = query(
-      logsCollection,
-      where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
-      where("timestamp", "<=", Timestamp.fromDate(endOfDay))
-    );
-    const attendanceSnap = await getDocs(q);
-
-    let studentsEntry = 0;
-    let studentExit = 0;
-
-    attendanceSnap.forEach((docSnap) => {
-      const data = docSnap.data();
-      const type = data.type;
-
-      if (type === "ENTRY") {
-        studentsEntry++;
-      } else if (type === "EXIT") {
-        studentExit++;
-      }
-    });
-
-    return {
-      totalStudents,
-      studentsEntry,
-      studentExit,
-      earlierPickups: 0,
-      afterSchool: 0,
-      onVehicle: 0,
-      activeToday: 0,
-      avgAttendance: 0,
-      newStudents: 0,
-    };
-  } catch (error) {
-    console.error("Error fetching metrics:", error);
-    return {
-      totalStudents: 0,
-      studentsEntry: 0,
-      studentExit: 0,
-      earlierPickups: 0,
-      afterSchool: 0,
-      onVehicle: 0,
-      activeToday: 0,
-      avgAttendance: 0,
-      newStudents: 0,
-    };
-  }
-};
-
-/**
- * Fetch grade-wise attendance for a specific date
- * Returns total strength and present count for each grade
- * @param targetDate - Optional date to fetch attendance for (defaults to today)
- */
-export const getGradeWiseAttendance = async (targetDate?: Date) => {
-  try {
-    // Get all students grouped by grade
-    const studentsSnap = await getDocs(collection(db, "students"));
-    const gradeMap: Record<
-      string,
-      { strength: number; presentUSNs: Set<string> }
-    > = {};
-
-    // Count total students per grade
-    studentsSnap.forEach((docSnap) => {
-      const data = docSnap.data();
-      const grade = data.grade || "Unknown";
-
-      if (!gradeMap[grade]) {
-        gradeMap[grade] = { strength: 0, presentUSNs: new Set() };
-      }
-      gradeMap[grade].strength += 1;
-    });
-
-    // Use provided date or default to today
-    const queryDate = targetDate || new Date();
-    const startOfDay = new Date(queryDate);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(queryDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // Fetch ONLY documents from the selected date range
-    const logsCollection = collection(db, "attendance_logs");
-    const q = query(
-      logsCollection,
-      where("timestamp", ">=", Timestamp.fromDate(startOfDay)),
-      where("timestamp", "<=", Timestamp.fromDate(endOfDay))
-    );
-    const attendanceSnap = await getDocs(q);
-
-    // Track students who have entered on selected date
-    const studentStatus: Record<
-      string,
-      { lastAction: string; timestamp: Timestamp }
-    > = {};
-
-    attendanceSnap.forEach((docSnap) => {
-      const data = docSnap.data();
-      const usn = data.usn;
-      const type = data.type;
-      const ts = data.timestamp as Timestamp;
-
-      if (!usn || !type || !ts) return;
-
-      // Update student status with latest action
-      if (!studentStatus[usn] || ts.toMillis() > studentStatus[usn].timestamp.toMillis()) {
-        studentStatus[usn] = { lastAction: type, timestamp: ts };
-      }
-    });
-
-    // Count present students (those whose last action was ENTRY)
-    Object.entries(studentStatus).forEach(([usn, status]) => {
-      if (status.lastAction === "ENTRY") {
-        // Find this student's grade
-        const studentDoc = studentsSnap.docs.find((doc) => doc.id === usn);
-        if (studentDoc) {
-          const grade = studentDoc.data().grade || "Unknown";
-          if (gradeMap[grade]) {
-            gradeMap[grade].presentUSNs.add(usn);
-          }
-        }
-      }
-    });
-
-    // Convert to array format
-    const gradeAttendance = Object.entries(gradeMap).map(([grade, data]) => ({
-      grade,
-      strength: data.strength,
-      present: data.presentUSNs.size,
-    }));
-
-    // Sort by grade
-    const gradeOrder = [
-      "PREKG",
-      "LKG",
-      "UKG",
-      "G1",
-      "G2",
-      "G3",
-      "G4",
-      "G5",
-      "G6",
-      "G7",
-      "G8",
-      "G9",
-      "G10",
-      "G11",
-      "G12",
-    ];
-    gradeAttendance.sort((a, b) => {
-      const indexA = gradeOrder.indexOf(a.grade);
-      const indexB = gradeOrder.indexOf(b.grade);
-      if (indexA === -1 && indexB === -1) return a.grade.localeCompare(b.grade);
-      if (indexA === -1) return 1;
-      if (indexB === -1) return -1;
-      return indexA - indexB;
-    });
-
-    return gradeAttendance;
-  } catch (error) {
-    return [];
-  }
-};
-
-/**
- * Helper to convert strings to Title Case (Camel Case style for names)
- * Example: "JOHN DOE" -> "John Doe", "jane doe" -> "Jane Doe"
- */
 export function toTitleCase(str: string | null | undefined): string {
   if (!str || typeof str !== "string") return "N/A";
   

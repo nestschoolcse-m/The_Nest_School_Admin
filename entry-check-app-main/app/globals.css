@@ -10,7 +10,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  /* Updated primary to teal for school theme */
+  /* Updated primary to nest blue for school theme */
   --primary: oklch(0.6 0.15 180);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
@@ -76,8 +76,8 @@
 }
 
 @theme inline {
-  --font-sans: "Geist", "Geist Fallback";
-  --font-mono: "Geist Mono", "Geist Mono Fallback";
+  --font-sans: var(--font-outfit), sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -114,6 +114,18 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Custom Brand Palette: Nest Blue */
+  --color-nest-50: #edf2f8;
+  --color-nest-100: #d3e0ef;
+  --color-nest-200: #aaccf5;
+  --color-nest-300: #66a3e0;
+  --color-nest-400: #337acc;
+  --color-nest-500: #003383;
+  --color-nest-600: #002969;
+  --color-nest-700: #001f4f;
+  --color-nest-800: #001434;
+  --color-nest-900: #000a1a;
 }
 
 @layer base {
