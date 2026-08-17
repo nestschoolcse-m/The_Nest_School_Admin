@@ -28,6 +28,39 @@ export const calculateSegment = (grade: string | null): string => {
   return "Unknown";
 };
 
+export const GRADE_ORDER = [
+  "PREKG",
+  "LKG",
+  "UKG",
+  "G1",
+  "G2",
+  "G3",
+  "G4",
+  "G5",
+  "G6",
+  "G7",
+  "G8",
+  "G9",
+  "G10",
+  "G11",
+  "G12",
+  "AS LEVEL",
+  "A LEVEL",
+];
+
+export function compareGrades(gradeA: string | null, gradeB: string | null): number {
+  const normA = normalizeGrade(gradeA) || gradeA || "Unknown";
+  const normB = normalizeGrade(gradeB) || gradeB || "Unknown";
+  const idxA = GRADE_ORDER.indexOf(normA);
+  const idxB = GRADE_ORDER.indexOf(normB);
+  
+  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+  if (idxA !== -1) return -1;
+  if (idxB !== -1) return 1;
+  
+  return normA.localeCompare(normB, undefined, { numeric: true });
+}
+
 export function normalizeGrade(grade: string | null): string | null {
   if (!grade) return null;
   let str = String(grade).trim().toUpperCase();

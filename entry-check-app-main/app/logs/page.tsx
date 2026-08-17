@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useDashboardData } from "@/contexts/dashboard-data-context"
+import { useStudentsContext } from "@/contexts/students-context"
 import { useDate } from "@/contexts/date-context"
-import { calculateSegment } from "@/lib/file-parser"
+import { calculateSegment, normalizeGrade, compareGrades } from "@/lib/file-parser"
 import { ArrowLeft, RefreshCw, Users, LogOut, Search, AlertCircle } from "lucide-react"
 import {
   Table,
@@ -45,7 +46,16 @@ export default function LogsPage() {
   const type = searchParams?.get("type")
 
   const { entryLogs, exitLogs, studentsEntry, studentExit, loading, refreshMetrics } = useDashboardData()
+  const { students } = useStudentsContext()
   const { selectedDate } = useDate()
+
+  const uniqueGrades = useMemo(() => {
+    const grades = new Set(students.map(s => {
+      const normalized = normalizeGrade(s.grade);
+      return normalized || s.grade?.split(" ")[0] || "Unknown";
+    }))
+    return Array.from(grades).sort(compareGrades)
+  }, [students])
 
   const isEntry = type === "entry"
   const logs = isEntry ? entryLogs : exitLogs
@@ -107,15 +117,18 @@ export default function LogsPage() {
 
   const isGradeMatch = (grade: string, filter: string) => {
     if (filter === "all") return true;
-    if (filter === "1-5") return ["G1", "G2", "G3", "G4", "G5"].includes(grade);
-    if (filter === "PREKG-LKG") return ["PREKG", "LKG"].includes(grade);
-    if (filter === "8-12") return ["G8", "G9", "G10", "G11", "G12"].includes(grade);
+
+    const normalizedGrade = normalizeGrade(grade) || grade;
+
+    if (filter === "1-5") return ["G1", "G2", "G3", "G4", "G5"].includes(normalizedGrade);
+    if (filter === "PREKG-LKG") return ["PREKG", "LKG"].includes(normalizedGrade);
+    if (filter === "8-12") return ["G8", "G9", "G10", "G11", "G12"].includes(normalizedGrade);
     
     // Check if the filter matches the exact grade
-    if (grade === filter) return true;
+    if (normalizedGrade === filter || grade === filter) return true;
     
     // Check if the filter matches the segment (e.g. "EYP", "PYP")
-    if (calculateSegment(grade) === filter) return true;
+    if (calculateSegment(normalizedGrade) === filter) return true;
     
     return false;
   }
@@ -133,7 +146,7 @@ export default function LogsPage() {
       if (sortBy === "timestamp") {
         comparison = a.timestamp.getTime() - b.timestamp.getTime();
       } else if (sortBy === "grade") {
-        comparison = a.grade.localeCompare(b.grade, undefined, { numeric: true });
+        comparison = compareGrades(a.grade, b.grade);
       }
       return sortOrder === "asc" ? comparison : -comparison;
     })
@@ -201,7 +214,16 @@ export default function LogsPage() {
             Total {isEntry ? "Entries" : "Exits"}: {filteredLogs.length}
           </span>
           <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-            <Select value={gradeFilter} onValueChange={setGradeFilter}>
+            <Select 
+              value={gradeFilter} 
+              onValueChange={(val) => {
+                setGradeFilter(val);
+                if (val !== "all") {
+                  setSortBy("grade");
+                  setSortOrder("asc");
+                }
+              }}
+            >
               <SelectTrigger className="w-full sm:w-40 bg-white">
                 <SelectValue placeholder="Filter by Grade" />
               </SelectTrigger>
@@ -210,9 +232,9 @@ export default function LogsPage() {
                 <SelectItem value="PREKG-LKG">PREKG - LKG</SelectItem>
                 <SelectItem value="1-5">Grades 1-5</SelectItem>
                 <SelectItem value="8-12">Grades 8-12</SelectItem>
-                {gradeFilter !== "all" && !["PREKG-LKG", "1-5", "8-12"].includes(gradeFilter) && (
-                  <SelectItem value={gradeFilter}>{gradeFilter}</SelectItem>
-                )}
+                {uniqueGrades.map(g => (
+                  <SelectItem key={g} value={g}>{g}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={`${sortBy}-${sortOrder}`} onValueChange={(val) => {

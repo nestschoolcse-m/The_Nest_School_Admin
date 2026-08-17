@@ -5,6 +5,7 @@ import { useDashboardData } from "@/contexts/dashboard-data-context"
 import { useStudentsContext } from "@/contexts/students-context"
 import { useDate } from "@/contexts/date-context"
 import { exportReportToPDF } from "@/lib/pdf-export"
+import { normalizeGrade, compareGrades } from "@/lib/file-parser"
 import { CalendarWidget } from "@/components/calendar-widget"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -77,10 +78,20 @@ export default function ReportsPage() {
     return segments[segment as keyof typeof segments]?.includes(grade)
   }
 
+  // Generate unique grades for dropdown
+  const uniqueGrades = useMemo(() => {
+    const grades = new Set(students.map(s => {
+      const normalized = normalizeGrade(s.grade);
+      return normalized || s.grade?.split(" ")[0] || "Unknown";
+    }))
+    return Array.from(grades).sort(compareGrades)
+  }, [students])
+
   // Derive target students
   const targetStudents = useMemo(() => {
     return students.filter(student => {
-      const g = student.grade?.split(" ")[0] || "Unknown" // Strip sections if any
+      const normalized = normalizeGrade(student.grade);
+      const g = normalized || student.grade?.split(" ")[0] || "Unknown" // Strip sections if any
       if (reportType === "whole") return true
       if (reportType === "grade") return filterValue === "all" || g === filterValue
       if (reportType === "segment") return filterValue === "all" || isInSegment(g, filterValue)
@@ -139,12 +150,6 @@ export default function ReportsPage() {
     if (reportType === "segment") filterLabel = `Segment`
     exportReportToPDF(selectedDate, filterLabel, filterValue === "all" ? "" : filterValue, totalStudents, entriesInTarget, exitsInTarget, absentCount, absentStudents, missingExits, missingEntries)
   }
-
-  // Generate unique grades for dropdown
-  const uniqueGrades = useMemo(() => {
-    const grades = new Set(students.map(s => s.grade?.split(" ")[0] || "Unknown"))
-    return Array.from(grades).sort()
-  }, [students])
 
   return (
     <div className="p-6 space-y-6">
